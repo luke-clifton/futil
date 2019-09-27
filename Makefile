@@ -1,6 +1,13 @@
-CFLAGS = -Wall
+CFLAGS = -Wall -pedantic
 
-SRC=$(wildcard *.c)
+SRCS=$(wildcard *.c)
 
-all: $(SRC)
+BINS=$(SRCS:.c=)
+%: %.c
 	gcc -o $@ $^ $(CFLAGS)
+
+
+all: $(BINS)
+
+clean:
+	rm -- $(BINS)
