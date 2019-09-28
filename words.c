@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 
+// Split stdin into an array of words.
 int main(int argc, char *argv[])
 {
 	char buf[BUFSIZ];

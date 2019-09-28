@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 			default:
 				if (wait(&stat) == -1)
 				{
-					perror("forever");
+					perror("map:wait()");
 					exit(1);
 				}
 				if (WIFEXITED(stat))
