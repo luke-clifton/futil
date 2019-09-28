@@ -18,7 +18,6 @@ int main(int argc, char *argv[])
 				exit(1);
 			case 0:
 				execvp(argv[1], &argv[1]);
-				break;
 			default:
 				if (wait(NULL) == -1)
 				{
