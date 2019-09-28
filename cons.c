@@ -5,8 +5,6 @@
 
 // String -> [String] -> [String]
 
-// We need a String -> IO [String] -> IO [String]
-
 int main(int argc, char *argv[])
 {
 	if (argc < 3)
