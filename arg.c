@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
 	switch (fork())
 	{
 		case -1:
-			perror("filter");
+			perror("arg.fork()");
 			exit(1);
 		case 0:
 			close(fds[1]);
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 			close(fds[1]);
 			if (wait(&stat) == -1)
 			{
-				perror("filter");
+				perror("arg.wait()");
 				exit(1);
 			}
 			if (WIFEXITED(stat))

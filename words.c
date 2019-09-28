@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,11 @@ int main(int argc, char *argv[])
 				cur = &buf[i];
 				continue;
 			}
+		}
+		if (cur)
+		{
+			write(1,cur,&buf[sizeof(buf)] - cur);
+			cur = buf;
 		}
 	}
 }
