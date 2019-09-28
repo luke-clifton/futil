@@ -2,12 +2,15 @@ CFLAGS = -Wall -pedantic
 
 SRCS=$(wildcard *.c)
 
-BINS=$(SRCS:.c=)
-%: %.c
+BINS=$(addprefix bin/, $(SRCS:.c=))
+
+all: bin $(BINS)
+
+bin/%: %.c
 	gcc -o $@ $^ $(CFLAGS)
 
-
-all: $(BINS)
+bin:
+	mkdir -p bin
 
 clean:
-	rm -- $(BINS)
+	rm -Rf bin
