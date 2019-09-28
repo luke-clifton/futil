@@ -19,9 +19,9 @@
 int main(int argc, char *argv[])
 {
 	char *var = argv[1];
-	if (argc < 2)
+	if (argc < 4)
 	{
-		fprintf(stderr, "Lambda requires at least two arguments");
+		fprintf(stderr, "Lambda requires at least three arguments");
 		exit(1);
 	}
 	for (int i = 2; i < (argc - 1); i++)
