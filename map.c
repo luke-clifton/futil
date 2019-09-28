@@ -33,10 +33,8 @@ int main(int argc, char *argv[])
 				}
 				if (WIFEXITED(stat))
 				{
-					if (WEXITSTATUS(stat))
-					{
-						exit(1);
-					}
+					char zero = 0;
+					write(1,&zero,1);
 				}
 		}
 	}
