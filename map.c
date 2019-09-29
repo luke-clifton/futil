@@ -8,6 +8,11 @@
 
 int main(int argc, char *argv[])
 {
+	if (argc < 2)
+	{
+		fprintf(stderr, "map requires at least one argument");
+		exit(1);
+	}
 	for (int i = 0; i < argc; i++)
 	{
 		argv[i] = argv[i+1];
