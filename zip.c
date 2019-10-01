@@ -4,8 +4,9 @@
 #include <string.h>
 #include <unistd.h>
 
-// For each null terminated string read in from stdin, execute
-// the provided function with that argument.
+// Interleave two lists, stopping as soon as one of the lists
+// is empty. Use can use this in conjunction with functions
+// which read multiple values, such as mapTuple.
 
 int main(int argc, char *argv[])
 {
