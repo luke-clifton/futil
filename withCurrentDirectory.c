@@ -13,16 +13,19 @@
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2)
+	if (argc < 3)
 	{
 		fprintf(stderr, "withCurrentDirectory requires at least two arguments");
 		exit(1);
 	}
-        chdir(argv[1]);
+	if (chdir(argv[1]))
+	{
+		perror("withCurrentDirectory.chdir");
+		exit(1);
+	}
 	if (execvp(argv[2], &(argv[2])) == -1)
 	{
 		perror(argv[2]);
 		exit(1);
 	}
-	return 0;
 }

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ int main(int argc, char *argv[])
 			execvp(argv[2], &argv[2]);
 		default:
 			close(fds[0]);
-			write(fds[1], argv[1], strlen(argv[1]));
+			if (-1 == write(fds[1], argv[1], strlen(argv[1])))
 			close(fds[1]);
 			if (wait(&stat) == -1)
 			{
