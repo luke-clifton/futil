@@ -26,7 +26,7 @@
 //   cmd x 1 2 1
 //
 // Useful for when you need to re-arrange arguments to work with commands
-// like concatMap.
+// like map.
 //
 // Note that nested lambdas are a bit confusing as the bind from the outside
 // in.

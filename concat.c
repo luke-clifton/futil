@@ -20,16 +20,15 @@ void go(int fd)
 	{
 		if (len == -1)
 		{
-			perror("words");
+			perror("concat.read");
 			exit(1);
 		}
 		while (cur < &buf[len])
 		{
-			cur = memchr(pre, '\n', buf + len - pre);
+			cur = memchr(pre, 0, buf + len - pre);
 			if (cur)
 			{
 				write(1,pre, cur - pre);
-				write(1,&zero,1);
 				pre = cur + 1;
 			}
 			else
@@ -56,13 +55,13 @@ int main(int argc, char *argv[])
 		int fds[2];
 		if (pipe(fds))
 		{
-			perror("lines.pipe");
+			perror("concat.pipe");
 			exit(0);
 		}
 		switch (fork())
 		{
 			case -1:
-				perror("lines.fork");
+				perror("concat.fork");
 				exit(1);
 			case 0:
 				close(fds[0]);
