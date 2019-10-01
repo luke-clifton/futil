@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
 		switch (fork())
 		{
 			case -1:
-				perror("zipWith:fork()");
+				perror("mapTuple:fork()");
 				exit(1);
 			case 0:
 				newargv[argc] = linep1;
@@ -36,7 +36,7 @@ int main(int argc, char *argv[])
 			default:
 				if (wait(&stat) == -1)
 				{
-					perror("zipWith:wait()");
+					perror("mapTuple:wait()");
 					exit(1);
 				}
 				if (WIFEXITED(stat))

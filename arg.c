@@ -6,6 +6,11 @@
 
 int main(int argc, char *argv[])
 {
+	if (argc < 3)
+	{
+		fprintf(stderr, "usage: %s val cmd [args]\n", argv[0]);
+		exit(0);
+	}
 	int stat;
 	int fds[2];
 	if (-1 == pipe(fds))

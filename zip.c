@@ -6,7 +6,9 @@
 
 // Interleave two lists, stopping as soon as one of the lists
 // is empty. Use can use this in conjunction with functions
-// which read multiple values, such as mapTuple.
+// which read multiple values, such as mapTuple. One list
+// is read from stdin, the other is read from exec'ing the
+// argument and reading it's stdout.
 
 int main(int argc, char *argv[])
 {
