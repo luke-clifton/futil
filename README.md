@@ -1,5 +1,9 @@
 A functional take on some shell utilities.
 
+map :: (String -> IO [String]) -> [String] -> IO [String]
+
+pure :: String -> IO [String]
+
 Each of these utilities can be thought of as a function which takes
 one or more string arguments (the command line arguments), a function argument
 (trailing command line arguments), and a list of strings (the stdinput).
@@ -21,7 +25,7 @@ Such functions are suffixed with an _
 
 If a function takes a function as an argument, it must have a fixed number
 of String arguments before it. We avoid the use of special markers such as
-`--` at all costs.
+`--` except in very specific circumstances (see lambda function).
 
     withCurrentDirectory :: String -> ([String] -> IO [String]) -> IO [String]
 

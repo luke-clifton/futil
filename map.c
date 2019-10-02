@@ -24,7 +24,11 @@ int main(int argc, char *argv[])
 				exit(1);
 			case 0:
 				argv[argc-1] = linep;
-				execvp(argv[0], &argv[0]);
+				if (-1 == execvp(argv[0], &argv[0]))
+				{
+					perror("main.execvp");
+					exit(1);
+				}
 			default:
 				if (wait(&stat) == -1)
 				{
