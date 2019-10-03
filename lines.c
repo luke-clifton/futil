@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <skalibs/stralloc.h>
+#include <skalibs/skamisc.h>
 
 // With no arguments, split stdin into an array of lines.
 // Otherwise, exec the argument, and split the output of
@@ -16,6 +18,7 @@ void go(int fd)
 	char *pre = buf;
 	char *cur = buf;
 	char zero = 0;
+	int new = 0;
 	while ((len = read(fd, buf, sizeof(buf))))
 	{
 		if (len == -1)
@@ -28,8 +31,9 @@ void go(int fd)
 			cur = memchr(pre, '\n', buf + len - pre);
 			if (cur)
 			{
+				if (new) write(1,&zero,1);
 				write(1,pre, cur - pre);
-				write(1,&zero,1);
+				new = 1;
 				pre = cur + 1;
 			}
 			else
@@ -39,7 +43,13 @@ void go(int fd)
 		}
 		if (!cur)
 		{
-			write(1,pre, buf + len - pre);
+			int l = buf + len - pre;
+			if (l)
+			{
+				if (new) write(1,&zero,1);
+				write(1,pre,l);
+				new = 0;
+			}
 			pre = buf;
 		}
 	}
