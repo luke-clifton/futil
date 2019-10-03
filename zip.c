@@ -25,6 +25,7 @@ int main(int argc, char *argv[])
 	int n = open("/dev/null", O_RDWR);
 	int fds[2];
 	FILE *handle;
+	int tail = 0;
 	if (-1 == pipe(fds))
 	{
 	    perror("zip");
@@ -53,10 +54,11 @@ int main(int argc, char *argv[])
 			      && (getdelim(&linep2, &s2, 0, handle) > 0)
 			      )
 			{
+				if (tail) putchar(0);
+				tail = 1;
 				fputs(linep, stdout);
 				putchar(0);
 				fputs(linep2, stdout);
-				putchar(0);
 			}
 			fclose(stdin);
 			fclose(handle);

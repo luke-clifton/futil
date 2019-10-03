@@ -16,8 +16,12 @@ int main(int argc, char *argv[])
 	size_t s;
 	int stat;
 	int fds[2];
+	int tail = 0;
 	while (-1 != getdelim(&linep, &s, 0, stdin))
 	{
+		char zero = 0;
+		if (tail) write(1,&zero,1);
+		tail = 1;
 		if (pipe(fds))
 		{
 			perror("mapIO.pipe");
@@ -40,11 +44,6 @@ int main(int argc, char *argv[])
 				{
 					perror("map:wait()");
 					exit(1);
-				}
-				if (WIFEXITED(stat))
-				{
-					char zero = 0;
-					write(1,&zero,1);
 				}
 		}
 	}

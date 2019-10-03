@@ -22,14 +22,16 @@ int main(int argc, char *argv[])
 	int stat;
 	FILE *h1 = fopen(argv[1], "r");
 	FILE *h2 = fopen(argv[2], "r");
+	int tail = 0;
 	while (  (getdelim(&linep, &s, 0, h1) > 0)
 	      && (getdelim(&linep2, &s2, 0, h2) > 0)
 	      )
 	{
+		if (tail) putchar(0);
+		tail = 1;
 		fputs(linep, stdout);
 		putchar(0);
 		fputs(linep2, stdout);
-		putchar(0);
 	}
 	fclose(h1);
 	fclose(h2);
