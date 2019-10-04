@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <futil.h>
 
 // For each null terminated string read in from stdin, execute
 // the provided function passing the string as stdin.
@@ -13,38 +14,13 @@
 int main(int argc, char *argv[])
 {
 	char *linep = NULL;
-	size_t s;
-	int stat;
-	int fds[2];
-	int tail = 0;
-	while (-1 != getdelim(&linep, &s, 0, stdin))
+	ctx c = (ctx) {
+		.in = stdin,
+		.out = stdout,
+		.err = "mapIO"
+		};
+	while ((linep = read_item(&c)))
 	{
-		char zero = 0;
-		if (tail) write(1,&zero,1);
-		tail = 1;
-		if (pipe(fds))
-		{
-			perror("mapIO.pipe");
-			exit(1);
-		}
-		switch (fork())
-		{
-			case -1:
-				perror("map:fork()");
-				exit(1);
-			case 0:
-				close(fds[1]);
-				dup2(fds[0], 0);
-				execvp(argv[1], &argv[1]);
-			default:
-				close(fds[0]);
-				write(fds[1], linep, strlen(linep));
-				close(fds[1]);
-				if (wait(&stat) == -1)
-				{
-					perror("map:wait()");
-					exit(1);
-				}
-		}
+		write_item_proc(&c, &argv[1], linep, strlen(linep));
 	}
 }

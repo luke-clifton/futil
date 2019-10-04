@@ -23,6 +23,6 @@ int main(int argc, char *argv[])
 	while ((linep = read_item(&c)))
 	{
 		argv[argc-1] = linep;
-		write_item_proc(&c, &argv[0]);
+		write_item_proc(&c, &argv[0], NULL, 0);
 	}
 }
