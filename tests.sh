@@ -17,3 +17,4 @@ assert "length (map f x) = length x" <(array 1 2 3 | map echo | length) <(array 
 assert "drop" <(drop 1 cons a nil) <(nil)
 assert "drop 2" <(drop 2 array 1 2 3 4) <(array 3 4)
 assert "take" <(take 1 cons a nil) <(cons a nil)
+assert "take 2" <(take 2 array 1 2 3) <(array 1 2)
