@@ -16,7 +16,7 @@ void go(int count, int fd)
 	char *pre = buf;
 	char *cur = buf;
 	char zero = 0;
-	while ((len = read(fd, buf, sizeof(buf))))
+	while (count > 0 && (len = read(fd, buf, sizeof(buf))))
 	{
 		if (len == -1)
 		{
