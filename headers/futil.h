@@ -9,6 +9,7 @@ typedef struct ctx
 	char *err;
 	char *linep;
 	size_t linesize;
+	int okToEnd;
 } ctx;
 
 typedef struct item

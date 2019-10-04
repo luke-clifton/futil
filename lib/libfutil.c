@@ -13,7 +13,7 @@ int write_item(ctx *c, char *item)
 {
 	if (c->tail) fputc(0, c->out);
 	c->tail = 1;
-	if (fputs(item, c->out) > 0)
+	if (fputs(item, c->out) >= 0)
 	{
 		return 1;
 	}
@@ -24,6 +24,8 @@ int write_item(ctx *c, char *item)
 	}
 }
 
+char emptyString[1] = {0};
+
 /* Read an item. This reads the whole item into memory. Not suitable for
  * streaming.
  */
@@ -32,6 +34,7 @@ char *read_item(ctx *c)
 	int len = getdelim(&(c->linep), &(c->linesize), 0, c->in);
 	if (len >= 0)
 	{
+		c->okToEnd = c->linep[len-1];
 		return c->linep;
 	}
 	if (ferror(c->in))
@@ -39,7 +42,12 @@ char *read_item(ctx *c)
 		perror(c->err);
 		exit(1);
 	}
-	return NULL;
+	if (c->okToEnd)
+	{
+		return NULL;
+	}
+	c->okToEnd = 1;
+	return emptyString;
 }
 
 
