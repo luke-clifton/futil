@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <futil.h>
 
 // Interleave two lists, stopping as soon as one of the lists
 // is empty. Use can use this in conjunction with functions
@@ -18,19 +19,18 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	char *linep = NULL;
-	size_t s;
 	char *linep2 = NULL;
-	size_t s2;
 	int stat;
 	int n = open("/dev/null", O_RDWR);
 	int fds[2];
 	FILE *handle;
-	int tail = 0;
 	if (-1 == pipe(fds))
 	{
 	    perror("zip");
 	    exit(1);
 	}
+
+	ctx cin = (ctx) { .out = stdout, .in = stdin };
 	switch (fork())
 	{
 		case -1:
@@ -50,18 +50,16 @@ int main(int argc, char *argv[])
 				perror("zip.fdopen()");
 				exit(1);
 			}
-			while (  (getdelim(&linep, &s, 0, stdin) > 0)
-			      && (getdelim(&linep2, &s2, 0, handle) > 0)
+			ctx cpi = (ctx) { .in = handle };
+			while (  (linep = read_item(&cin))
+			      && (linep2 = read_item(&cpi))
 			      )
 			{
-				if (tail) putchar(0);
-				tail = 1;
-				fputs(linep, stdout);
-				putchar(0);
-				fputs(linep2, stdout);
+				write_item(&cin, linep);
+				write_item(&cin, linep2);
 			}
-			fclose(stdin);
 			fclose(handle);
+			fclose(stdin);
 			if (wait(&stat))
 			{
 				if (WIFEXITED(stat))
