@@ -53,8 +53,6 @@ char *read_item(ctx *c)
 void write_item_proc(ctx *c, char **args, char *input, int len)
 {
 	int stat;
-	if (c->tail) fputc(0, c->out);
-	c->tail = 1;
 	fflush(c->out);
 	int fds[2];
 	if (input && pipe(fds))
@@ -92,6 +90,7 @@ void write_item_proc(ctx *c, char **args, char *input, int len)
 				perror(c->err);
 				exit(1);
 			}
+			fputc(0, c->out);
 	}
 }
 

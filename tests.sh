@@ -1,6 +1,6 @@
 
 assert() {
-	diff "$2" "$3" && printf '%-40s passed\n' "$1" || (echo "$1 failed" && exit 1)
+	diff "$2" "$3" && printf '%-40s passed\n' "$1" || (printf "%-40s failed\n" "$1" && exit 1)
 }
 
 assert "nil == ''" <(nil) <(printf '')
@@ -13,6 +13,7 @@ assert "concat2" <(concat array 1 2) <(printf 12)
 assert "concat bad terminate" <(concat printf '1\0002') <(printf 12)
 assert "cons is array" <(cons a cons b nil) <(array a b)
 assert "map f [] == []" <(array | map echo) <(array)
+assert "map printf" <(array 1 2 3 | map printf "%s-") <(array 1- 2- 3-)
 assert "length (map f x) = length x" <(array 1 2 3 | map echo | length) <(array 1 2 3 | length)
 assert "drop" <(drop 1 cons a nil) <(nil)
 assert "drop 2" <(drop 2 array 1 2 3 4) <(array 3 4)
