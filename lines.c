@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <skalibs/stralloc.h>
-#include <skalibs/skamisc.h>
 
 // With no arguments, split stdin into an array of lines.
 // Otherwise, exec the argument, and split the output of

@@ -3,15 +3,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <futil.h>
 
 int main(int argc, char *argv[])
 {
-	char *linep = NULL;
-	size_t s;
-	ssize_t len;
 	int n = open("/dev/null", O_RDWR);
-	int tail = 0;
-	while (-1 != (len = getdelim(&linep, &s, 0, stdin)))
+	ctx c = (ctx){
+		.in = stdin,
+		.out = stdout,
+		.err = argv[0],
+		};
+
+	char *linep;
+	while ((linep = read_item(&c)))
 	{
 		int stat;
 		int fds[2];
@@ -30,9 +34,11 @@ int main(int argc, char *argv[])
 				dup2(n, 1);
 				dup2(fds[0], 0);
 				execvp(argv[1], &argv[1]);
+				perror("filter");
+				return 0;
 			default:
 				close(fds[0]);
-				write(fds[1], linep, len - 1);
+				write(fds[1], linep, strlen(linep));
 				close(fds[1]);
 				if (wait(&stat) == -1)
 				{
@@ -41,13 +47,10 @@ int main(int argc, char *argv[])
 				}
 				if (WIFEXITED(stat))
 				{
-				    if (!WEXITSTATUS(stat))
-				    {
-				    	char zero = 0;
-				    	if (tail) write(1,&zero,1);
-					tail = 1;
-					write(1, linep, len-1);
-				    }
+					if (!WEXITSTATUS(stat))
+					{
+						write_item(&c, linep);
+					}
 				} else
 				{
 				    fprintf(stderr, "Process exit weird\n");
