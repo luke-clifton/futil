@@ -10,6 +10,7 @@ int main(int argc, char *argv[])
 	size_t s;
 	ssize_t len;
 	int n = open("/dev/null", O_RDWR);
+	int tail = 0;
 	while (-1 != (len = getdelim(&linep, &s, 0, stdin)))
 	{
 		int stat;
@@ -42,7 +43,10 @@ int main(int argc, char *argv[])
 				{
 				    if (!WEXITSTATUS(stat))
 				    {
-					write(1, linep, len);
+				    	char zero = 0;
+				    	if (tail) write(1,&zero,1);
+					tail = 1;
+					write(1, linep, len-1);
 				    }
 				} else
 				{
