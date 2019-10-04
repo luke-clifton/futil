@@ -49,7 +49,8 @@ char *read_item_into(ctx *c, char **linep, size_t *s)
 }
 
 /* Read an item. This reads the whole item into memory. Not suitable for
- * streaming.
+ * streaming. Uses an internal buffer in the ctx argument. Use read_item_into
+ * if you need to have read multiple items at once.
  */
 char *read_item(ctx *c)
 {
