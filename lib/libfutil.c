@@ -23,15 +23,12 @@ int write_item(ctx *c, char *item)
 	}
 }
 
-char emptyString[1] = {0};
-
 
 char *read_item_into(ctx *c, char **linep, size_t *s)
 {
 	int len = getdelim(linep, s, 0, c->in);
 	if (len >= 0)
 	{
-		// c->okToEnd = (*linep)[len-1];
 		return *linep;
 	}
 	if (ferror(c->in))

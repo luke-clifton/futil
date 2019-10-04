@@ -31,9 +31,8 @@ void go(int count, int fd)
 			{
 				if (count == 0)
 				{
-					if (new) write(1,&zero,1);
 					write(1,pre, cur - pre);
-					new = 1;
+					write(1,&zero,1);
 				}
 				count = count > 0 ? count - 1 : 0;
 				pre = cur + 1;
@@ -48,9 +47,7 @@ void go(int count, int fd)
 			int l = buf + len - pre;
 			if (l && (count == 0))
 			{
-				if (new) write(1,&zero,1);
 				write(1,pre,l);
-				new = 0;
 			}
 			pre = buf;
 		}

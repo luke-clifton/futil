@@ -16,12 +16,11 @@ void go(int count, int fd)
 	char *pre = buf;
 	char *cur = buf;
 	char zero = 0;
-	int new = 0;
 	while ((len = read(fd, buf, sizeof(buf))))
 	{
 		if (len == -1)
 		{
-			perror("words");
+			perror("take");
 			exit(1);
 		}
 		while (cur < &buf[len])
@@ -29,10 +28,9 @@ void go(int count, int fd)
 			cur = memchr(pre, '\0', buf + len - pre);
 			if (cur)
 			{
-				if (new) write(1,&zero,1);
 				write(1,pre, cur - pre);
+				write(1,&zero,1);
 				if (--count < 1) return;
-				new = 1;
 				pre = cur + 1;
 			}
 			else
@@ -45,9 +43,7 @@ void go(int count, int fd)
 			int l = buf + len - pre;
 			if (l)
 			{
-				if (new) write(1,&zero,1);
 				write(1,pre,l);
-				new = 0;
 			}
 			pre = buf;
 		}
