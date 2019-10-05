@@ -5,7 +5,7 @@
 
 int main(int argc, char *argv[])
 {
-	printf("\033[2J\033[H");
+	printf("\033[1J\033[H");
 	fflush(stdout);
 	if (argv[1])
 	{

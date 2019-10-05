@@ -42,13 +42,13 @@ int main(int argc, char *argv[])
 			size += size;
 			if (!(args = realloc(args, size * sizeof(char*))))
 			{
+				perror("arg");
 				exit(1);
 			}
 		}
 		size_t s = 0;
 		args[i] = NULL;
-		char *x = NULL;
-		if (!(args[i] = read_item_into(&c, &x, &s)))
+		if (!(args[i] = read_item_into(&c, &args[i], &s)))
 			break;
 		argsize += strlen(args[i]);
 		if (argsize > ARG_SIZE_LIMIT)
