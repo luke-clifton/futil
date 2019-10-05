@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 // Run the continuation forever, concatonating all the outputs.
 //
@@ -9,6 +10,7 @@
 
 int main(int argc, char *argv[])
 {
+	int stat;
 	for(;;)
 	{
 		switch (fork())
@@ -19,10 +21,14 @@ int main(int argc, char *argv[])
 			case 0:
 				execvp(argv[1], &argv[1]);
 			default:
-				if (wait(NULL) == -1)
+				if (wait(&stat) == -1)
 				{
 					perror("forever");
 					exit(1);
+				}
+				if (WIFSIGNALED(stat))
+				{
+					exit(0);
 				}
 		}
 	}
