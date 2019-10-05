@@ -74,6 +74,8 @@ int main(int argc, char *argv[])
 				close(fds[0]);
 				dup2(fds[1],1);
 				execvp(argv[2], &argv[2]);
+				perror("take");
+				exit(1);
 			default:
 				close(fds[1]);
 				go(count, fds[0]);
