@@ -1,56 +1,63 @@
 #include <stdio.h>
+#include <limits.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <futil.h>
+
+// Unlike xargs, we intentionally do not break up the argument list to fit
+// into ARG_MAX or anything like that. The whole point of this is to turn
+// the input into a single command.
+
+// A largish number. This limit is simply here to terminate the program
+// when we suspect it was going to fail to execvp anyway. Portable scripts
+// will probably want to keep it small anyway.
+#define ARG_SIZE_LIMIT 10000000
 
 int main(int argc, char *argv[])
 {
-	if (argc < 3)
+	size_t argsize = 0;
+	ctx c = (ctx){.in = stdin, .out=stdout, .err="arg"};
+	int size = argc + 20;
+	char **args = malloc(size * sizeof(char *));
+	if (!args)
 	{
-		fprintf(stderr, "usage: %s val cmd [args]\n", argv[0]);
-		exit(0);
+		exit(1);
 	}
-	int stat;
-	int fds[2];
-	if (-1 == pipe(fds))
-	{
-	    perror("filter");
-	    exit(1);
-	}
-	switch (fork())
-	{
-		case -1:
-			perror("arg.fork()");
-			exit(1);
-		case 0:
-			close(fds[1]);
-			dup2(fds[0], 0);
-			execvp(argv[2], &argv[2]);
-			perror("arg");
-			exit(1);
-		default:
-			close(fds[0]);
-			if (-1 == write(fds[1], argv[1], strlen(argv[1])))
-			{
-				perror("arg");
-				exit(1);
-			}
-			close(fds[1]);
-			if (wait(&stat) == -1)
-			{
-				perror("arg.wait()");
-				exit(1);
-			}
-			if (WIFEXITED(stat))
-			{
-				return WEXITSTATUS(stat);
-			} else
-			{
-			    fprintf(stderr, "Process exit weird\n");
-			    exit(1);
-			}
 
+	int i = 0;
+	char **a = &argv[1];
+	while(*a)
+	{
+		args[i] = *a;
+		a++;
+		i++;
 	}
+	for(;;i++)
+	{
+		if (i >= size - 1)
+		{
+			size += size;
+			if (!(args = realloc(args, size * sizeof(char*))))
+			{
+				exit(1);
+			}
+		}
+		size_t s = 0;
+		args[i] = NULL;
+		char *x = NULL;
+		if (!(args[i] = read_item_into(&c, &x, &s)))
+			break;
+		argsize += strlen(args[i]);
+		if (argsize > ARG_SIZE_LIMIT)
+		{
+			fprintf(stderr, "%s: Argument list too long", argv[0]);
+			exit(1);
+		}
+	}
+	execvp(*args, args);
+	perror("arg");
+	exit(1);
 }
