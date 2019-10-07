@@ -1,34 +1,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <skalibs/iobuffer.h>
-#include <skalibs/djbunix.h>
-#include <skalibs/strerr.h>
 
 // Like cat, but without the options.
 
 int main(int argc, char *argv[])
 {
-	iobuffer buf;
-	char *prog = argv[0];
+	char buf[BUFSIZ];
 	while (*(++argv))
 	{
-		int fd = open2(*argv, O_RDONLY);
-		if (fd == -1)
+		FILE *handle = fopen(*argv, "r");
+		if (!handle)
 		{
-			perror("readFile.open");
-			exit(1);
-		}
-		if (!iobuffer_init(&buf, fd, 1))
-		{
-			fprintf(stderr, "Failed to init\n");
+			perror("readFile.fopen");
 			exit(1);
 		}
 		int len;
-		while ((len = iobuffer_fill(&buf)) > 0) iobuffer_flush(&buf);
-		if (len == -1)
+		while ((len = fread(buf, 1, sizeof(buf), handle)))
 		{
-			strerr_warn4sys(prog, ": ", *argv, ": ");
+			if (len > fwrite(buf, 1, len, stdout))
+			{
+				perror("readFile");
+				exit(1);
+			}
+		}
+		if (ferror(handle))
+		{
+			perror("readFile.fread");
+			exit(1);
 		}
 	}
 }

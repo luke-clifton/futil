@@ -1,4 +1,4 @@
-CFLAGS = -Wall -pedantic -lskarnet -lfutil -lm
+CFLAGS = -Wall -pedantic -lfutil -lm
 
 SRCS=$(wildcard *.c)
 LIBS_SRCS=$(wildcard lib/*.c)
