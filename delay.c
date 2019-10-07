@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 int main(int argc, char *argv[])
 {
@@ -37,6 +38,10 @@ int main(int argc, char *argv[])
 			{
 				usleep(usecs);
 				exit(WEXITSTATUS(stat));
+			}
+			if (WTERMSIG(stat))
+			{
+				raise(WTERMSIG(stat));
 			}
 			exit(1);
 	}
