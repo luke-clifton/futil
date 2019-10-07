@@ -2,23 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <futil.h>
 
 // String -> [String] -> [String]
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2)
-	{
-		fprintf(stderr, "cons requires at least one argument\n");
-		exit(1);
-	}
-	write(1, argv[1], strlen(argv[1]) + 1);
-	if (argv[2])
-	{
-		execvp(argv[2], &argv[2]);
-		perror("cons");
-		exit(1);
-	}
+	
+	ctx c = (ctx){.out = stdout};
+	printf("%d%c", argc - 1, 0);
+	while(*(++argv)) write_item(&c, *argv);
 
 	char buf[BUFSIZ];
 	size_t len;

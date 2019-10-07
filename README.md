@@ -1,10 +1,31 @@
+# EXPERIMENTAL!
+
 A functional take on some shell utilities.
 
-Arrays are '\0' separated (not terminated!) strings.
+Values are any string of bytes that can be used as a command argument (that
+is, any string of bytes not containing a `\0` character.
 
-(this means no empty lists though... hmmm)
+We use `\0` for terminating items in lists when reading from file descriptors.
+We thus get lazy infinite lists. Compatible with the output of `find -print0`
+and with the input of `xargs -0`.
 
-The issue was originally implementing concatMap seemed easier if we didn't have
-to worry about terminating nul which would translate into a double nul if we
-had to assume missing terminators. I think going back to null terminated
-seems easiest, but it will mean we have to double write things in concatMap.
+
+## The "types" of values.
+
+`String`: any non '\0' containing sequence of bytes. Can appear as arguments
+          or on stdin.
+
+`List`: A (potentially infinite) list of `String` types. Represented as
+        consecutive '\0' terminated `String` elements.
+
+`Array`: A finite number of consecutive `String` elements, prefixed by the
+         length of the array as a String.
+
+Some commands assume extra structure on the various inputs, for example,
+some assume that a `String` looks like a number, or operate on elements
+if a list two at a time (mapTuple).
+
+Unfortunately, we don't have a type checker, so it is up to you to to ensure
+the types match up. In some instances we can't even do run-time type checking
+due to the limited nature of our encoding scheme (`\0` terminated).
+

@@ -22,5 +22,6 @@ int write_item(ctx *c, char *item);
 char *read_item(ctx *c);
 char *read_item_into(ctx *c, char **linep, size_t *s);
 void write_item_proc(ctx *c, char **args, char *input, int len);
+char **read_array(ctx *c, int *len);
 
 #endif /* FUTIL_H */

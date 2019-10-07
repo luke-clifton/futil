@@ -94,3 +94,36 @@ void write_item_proc(ctx *c, char **args, char *input, int len)
 	}
 }
 
+char **read_array(ctx *c, int *len)
+{
+	char *length_str = read_item(c);
+	if (!length_str) return NULL;
+	int length = atoi(length_str);
+	char **items = calloc(length+1, sizeof(*items));
+	memset(items, 0, (length + 1) * sizeof(*items));
+	for(int i = 0; i < length; i++)
+	{
+		size_t s = 0;
+		if (!read_item_into(c, &(items[i]), &s))
+		{
+			for (int j = 0; j < i; j++)
+			{
+				free(items[j]);
+			}
+			free(items);
+			return NULL;
+		}
+	}
+	if (len) *len = length;
+	return items;
+}
+
+void free_array(char **items)
+{
+	char **i = items;
+	while (*i)
+	{
+		free(*i);
+	}
+	free(items);
+}

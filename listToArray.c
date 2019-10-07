@@ -7,19 +7,10 @@
 #include <unistd.h>
 #include <futil.h>
 
-// Unlike xargs, we intentionally do not break up the argument list to fit
-// into ARG_MAX or anything like that. The whole point of this is to turn
-// the input into a single command.
-
-// A largish number. This limit is simply here to terminate the program
-// when we suspect it was going to fail to execvp anyway. Portable scripts
-// will probably want to keep it small anyway.
-
-#define ARG_SIZE_LIMIT 10000000
+// Slurp in an entire list, and the output it prefixed by it's length.
 
 int main(int argc, char *argv[])
 {
-	size_t argsize = 0;
 	ctx c = (ctx){.in = stdin, .out=stdout, .err="arg"};
 	int size = argc + 20;
 	char **args = malloc(size * sizeof(char *));
@@ -51,14 +42,11 @@ int main(int argc, char *argv[])
 		args[i] = NULL;
 		if (!(args[i] = read_item_into(&c, &args[i], &s)))
 			break;
-		argsize += strlen(args[i]);
-		if (argsize > ARG_SIZE_LIMIT)
-		{
-			fprintf(stderr, "%s: Argument list too long", argv[0]);
-			exit(1);
-		}
 	}
-	execvp(*args, args);
-	perror("arg");
-	exit(1);
+	printf("%d%c", i, 0);
+	while (*args)
+	{
+		write_item(&c, *args);
+		args++;
+	}
 }
