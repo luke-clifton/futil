@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <fcntl.h>
 
-// Like cat, but without the options, and will ensure that the output is
-// '\0' terminated.
+// Like cat, but without the options, and will ensure that the output of each
+// file is '\0' terminated.
 //
 // See also readFile
 
