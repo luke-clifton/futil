@@ -33,7 +33,6 @@ void go(ctx *c)
 		write_item(c, items[count]);
 	}
 	count--;
-	fprintf(stderr, "%d -- \n", count);
 	for(int i = 0;;)
 	{
 		write_item(c, items[i]);
