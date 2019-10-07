@@ -15,22 +15,22 @@ void go(int fd)
 	ssize_t len;
 	char *pre = buf;
 	char *cur = buf;
-	char zero = 0;
+	char nl = '\n';
 	int termzero = 0;
 	while ((len = read(fd, buf, sizeof(buf))))
 	{
 		if (len == -1)
 		{
-			perror("lines");
+			perror("unlines");
 			exit(1);
 		}
 		while (cur < &buf[len])
 		{
-			cur = memchr(pre, '\n', buf + len - pre);
+			cur = memchr(pre, '\0', buf + len - pre);
 			if (cur)
 			{
 				write(1,pre, cur - pre);
-				write(1,&zero,1);
+				write(1,&nl,1);
 				pre = cur + 1;
 			}
 			else
@@ -49,7 +49,7 @@ void go(int fd)
 			pre = buf;
 		}
 	}
-	if (termzero) write(1,&zero,1);
+	if (termzero) write(1,&nl,1);
 }
 
 int main(int argc, char *argv[])
