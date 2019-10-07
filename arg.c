@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <futil.h>
+#include <sys/errno.h>
 
 // Unlike xargs, we intentionally do not break up the argument list to fit
 // into ARG_MAX or anything like that. The whole point of this is to turn
@@ -43,7 +44,6 @@ int main(int argc, char *argv[])
 			size += size;
 			if (!(args = realloc(args, size * sizeof(char*))))
 			{
-				perror("arg");
 				exit(1);
 			}
 		}
@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
 	if (*args)
 	{
 		execvp(*args, args);
-		perror("arg");
+		fprintf(stderr, "arg: %s: %s\n", *args, strerror(errno));
 		exit(1);
 	}
 	exit(0);

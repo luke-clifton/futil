@@ -2,11 +2,14 @@
 #include <string.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <sys/errno.h>
 
 // Like cat, but without the options and will error out if the file
 // contains a \0 byte.
 //
 // See also readList
+//
+// TODO: Should this error out, or should it encode the file?
 
 int main(int argc, char *argv[])
 {
@@ -16,7 +19,7 @@ int main(int argc, char *argv[])
 		FILE *handle = fopen(*argv, "r");
 		if (!handle)
 		{
-			perror("readFile.fopen");
+			fprintf(stderr, "readFile: %s: %s\n", *argv, strerror(errno));
 			exit(1);
 		}
 		int len;
