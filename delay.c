@@ -7,7 +7,7 @@
 int main(int argc, char *argv[])
 {
 	double secs = strtod(argv[1], NULL);
-	unsigned int usecs = round(abs(secs * 1000000));
+	unsigned int usecs = round(fabs(secs * 1000000));
 	
 	if (secs >= 0)
 	{
