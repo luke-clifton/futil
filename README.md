@@ -18,6 +18,7 @@ and with the input of `xargs -0`.
 `List`: A (potentially infinite) list of `String` types. Represented as
         consecutive '\0' terminated `String` elements.
 
+TODO: We might be able to replace all uses of Array with `dec/enc` pairs.
 `Array`: A finite number of consecutive `String` elements, prefixed by the
          length of the array as a String.
 
