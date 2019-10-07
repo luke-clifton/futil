@@ -41,7 +41,11 @@ int main(int argc, char *argv[])
 			}
 			if (WTERMSIG(stat))
 			{
-				raise(WTERMSIG(stat));
+				if (0 > raise(WTERMSIG(stat)))
+				{
+					perror("delay");
+					exit(1);
+				}
 			}
 			exit(1);
 	}
