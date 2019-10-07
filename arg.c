@@ -58,7 +58,11 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 	}
-	execvp(*args, args);
-	perror("arg");
-	exit(1);
+	if (*args)
+	{
+		execvp(*args, args);
+		perror("arg");
+		exit(1);
+	}
+	exit(0);
 }

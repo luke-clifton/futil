@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -55,6 +56,7 @@ int main(int argc, char *argv[])
 			perror("enc");
 			exit(1);
 		}
+		int stat;
 		switch (fork())
 		{
 			case -1:
@@ -71,7 +73,19 @@ int main(int argc, char *argv[])
 				FILE *h = fdopen(fds[1], "w");
 				go(h);
 				fclose(h);
-				wait(NULL);
+				wait(&stat);
+				if (WIFEXITED(stat))
+				{
+					exit(WEXITSTATUS(stat));
+				}
+				if (WTERMSIG(stat))
+				{
+					if (0 > raise(WTERMSIG(stat)))
+					{
+						perror("delay");
+						exit(1);
+					}
+				}
 		}
 	}
 	else
