@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <futil.h>
+#include <sys/wait.h>
 
 // Construct an array out of a variable number of command line arguments.
 
@@ -24,7 +25,11 @@ int main(int argc, char *argv[])
 	FILE *h;
 	if (cmd)
 	{
-		pipe(fds);
+		if (pipe(fds))
+		{
+			perror("autoEncList");
+			exit(1);
+		}
 		switch (fork())
 		{
 			case -1:
@@ -39,8 +44,17 @@ int main(int argc, char *argv[])
 			default:
 				close(fds[0]);
 				h = fdopen(fds[1], "w");
+				if (!h)
+				{
+					perror("autoEncList");
+					exit(1);
+				}
 				break;
 		}
+	}
+	else
+	{
+		h = stdout;
 	}
 	argv++;
 	while (*argv && strcmp(*argv, ">>="))
