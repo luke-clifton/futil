@@ -9,6 +9,9 @@
 //
 // If n is negative, execute the command first, then sleep for abs(n)
 // seconds.
+//
+// Fractional seconds are allowed. Uses `usleep`.
+
 
 int main(int argc, char *argv[])
 {
