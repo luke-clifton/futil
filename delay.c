@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
 				usleep(usecs);
 				exit(WEXITSTATUS(stat));
 			}
-			if (WTERMSIG(stat))
+			if (WIFSIGNALED(stat))
 			{
 				if (0 > raise(WTERMSIG(stat)))
 				{
