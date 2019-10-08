@@ -5,6 +5,11 @@
 #include <sys/wait.h>
 #include <signal.h>
 
+// Sleep for n seconds before executing a command.
+//
+// If n is negative, execute the command first, then sleep for abs(n)
+// seconds.
+
 int main(int argc, char *argv[])
 {
 	double secs = strtod(argv[1], NULL);
@@ -23,6 +28,11 @@ int main(int argc, char *argv[])
 	}
 
 	int stat;
+	if (!argv[2])
+	{
+		fprintf(stderr, "delay: called with negative argument requires a command to execute");
+		exit(1);
+	}
 	switch (fork())
 	{
 		case -1:
