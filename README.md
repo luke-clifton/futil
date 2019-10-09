@@ -18,13 +18,9 @@ and with the input of `xargs -0`.
 `List`: A (potentially infinite) list of `String` types. Represented as
         consecutive '\0' terminated `String` elements.
 
-TODO: We might be able to replace all uses of Array with `dec/enc` pairs.
-`Array`: A finite number of consecutive `String` elements, prefixed by the
-         length of the array as a String.
-
 Some commands assume extra structure on the various inputs, for example,
 some assume that a `String` looks like a number, or operate on elements
-if a list two at a time (mapTuple).
+of a list two at a time (mapTuple).
 
 Unfortunately, we don't have a type checker, so it is up to you to to ensure
 the types match up. In some instances we can't even do run-time type checking
