@@ -15,9 +15,10 @@
 
 int main(int argc, char *argv[])
 {
-	double secs = strtod(argv[1], NULL);
+
+	double secs = argv[1] ? strtod(argv[1], NULL) : 1;
 	unsigned int usecs = round(fabs(secs * 1000000));
-	
+
 	if (secs >= 0)
 	{
 		usleep(usecs);
