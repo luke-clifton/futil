@@ -17,6 +17,8 @@ int main(int argc, char *argv[])
 				exit(1);
 			case 0:
 				execvp(argv[2], &argv[2]);
+				perror("iterate:execvp");
+				exit(1);
 			default:
 				if (wait(NULL) == -1)
 				{

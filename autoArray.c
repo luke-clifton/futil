@@ -5,7 +5,8 @@
 #include <unistd.h>
 #include <futil.h>
 
-// Construct an array out of a variable number of command line arguments.
+// Construct multiple arrays out of a variable number of command line arguments.
+// Each array is split by a `:` argument.
 
 int count(char **argv)
 {
