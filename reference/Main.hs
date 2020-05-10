@@ -1,7 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE Rank2Types #-}
 module Main where
 
+-- Naming convention.
+--
+-- withXXX -- the std input is expected to be encoded as an XXX, this will be
+--            decoded and then passed to continuation.
+-- 
+-- xxx     -- If arguments are provided, perform xxx on the output of the
+--            command, otherwise perform xxx on stdinput.
+--
+-- unXxx   -- Do the opposite of xxx
+
+import Data.Word
 import GHC.Stack
 import Data.List as List
 import System.Posix.Env.ByteString
@@ -10,6 +22,7 @@ import Control.Monad
 import Shh
 import Shh.Internal
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Char8 as Char8
 import Data.Maybe
 import System.IO
 
@@ -58,6 +71,7 @@ mapping prog = do
     input <- chunksOf nvars . endBy0 <$> Lazy.getContents
 
     forM_ input $ \item -> do
+        when (length item /= nvars) $ error "Mismatched number of arguments"
         let
             subs = zip vars item
             prog'' = map (\x -> fromMaybe x (List.lookup x subs)) prog'
@@ -101,7 +115,25 @@ selectSource cmd [] = runProc cmd
 selectSource cmd args = withFrozenCallStack (exe args) |> cmd
 
 unlines :: [Lazy.ByteString] -> IO ()
-unlines = selectSource $ readInputEndBy0 (mapM_ Lazy.putStrLn)
+unlines = selectSource $ readInputEndBy0 (mapM_ Char8.putStrLn)
 
 lines :: [Lazy.ByteString] -> IO ()
 lines = selectSource $ readInputLines (mapM_ (\i -> Lazy.putStr i >> Lazy.putStr "\0"))
+
+
+nest :: [Lazy.ByteString] -> IO ()
+nest = selectSource $ pureProc (Lazy.concatMap encodingFn)
+
+    where
+        encodingFn :: Word8 -> Lazy.ByteString
+        encodingFn 0 = "\1\1"
+        encodingFn 1 = "\1\2"
+        encodingFn c = Lazy.singleton c
+
+--unNest :: [Lazy.ByteString] -> IO ()
+--unNest = selectSource $ pureProc (fromList . go . Lazy.toList)
+--
+--    where
+--        go (1:1:rest) = 0 : go rest
+--        go (1:2:rest) = 1 : go rest
+--        go (x:rest)   = x : go rest
