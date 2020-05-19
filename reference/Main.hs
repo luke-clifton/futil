@@ -152,33 +152,32 @@ validate p = P.for p $ \b -> do
     when (ByteString.elem 0 b) $ fail "Invalid object. Contains '\\0' byte."
     P.yield b
 
-cmd_length :: FreeT Object (SafeT IO) x -> SafeT IO (Int, x)
-cmd_length f = do
-    runFreeT f >>= \case
-        Pure x -> pure (0, x)
-        Free x -> do
-            f' <- P.runEffect $ x >-> Pr.drain
-            (l,x) <- cmd_length f'
-            pure $ (l + 1, x)
-
-
+-- | This is a helper class for peeling off @`Object`@s from a stream of
+-- @`Many`@, primarily used for feeding as arguments to a function.
 class Lambda f  where
-    apply :: f -> Bool -> FreeT Object (SafeT IO) x -> Object (FreeT Object (SafeT IO) x)
+    -- Peel off arguments from the @`Many`@, and produce an @`Object`@ returning
+    -- the remaining part of the stream.
+    apply :: f -> Many x -> Object (Many x)
 
+-- | Slurp a ByteString off, and apply it to the function.
 instance Lambda c => Lambda (LB.ByteString -> c) where
-    apply f started input = do
+    apply f input = do
         c <- PG.lift $ runFreeT input
         case c of
             Pure x -> error "We expected more arguments"
             Free x -> do
                 (arg, input') <- PG.lift $ P.toLazyM' x
                 let r = f arg
-                Main.apply r True input'
+                Main.apply r input'
 
-instance (m ~ SafeT IO) => Lambda (Producer ByteString m ()) where
-    apply f started input = fmap (const input) f
+-- Produce an @`Object`@
+instance (m ~ SafeT IO) => Lambda (Object' m x) where
+    apply f input = fmap (const input) f
 
-mapObjects :: (forall a. Object a -> Object (Object a)) -> FreeT Object (SafeT IO) r -> FreeT Object (SafeT IO) r
+-- | Perform a transformation on each @`Object`@ in a many. The object must
+-- prduce its any un-consumed input as a result, which will then be
+-- discarded.
+mapObjects :: (forall a. Object a -> Object (Object a)) -> Many r -> Many r
 mapObjects f t = do
     c <- PG.lift (runFreeT t)
     case c of
@@ -189,8 +188,19 @@ mapObjects f t = do
             r <- PG.lift (P.runEffect $ x >-> Pr.drain)
             mapObjects f r
 
--- Note, cmd_mapping function MUST consume at least one object. Can consume more.
-cmd_mapping :: Lambda l => (LB.ByteString -> l) -> FreeT Object (SafeT IO) r -> FreeT Object (SafeT IO) r
+cmd_length :: Many x -> SafeT IO (Int, x)
+cmd_length f = do
+    runFreeT f >>= \case
+        Pure x -> pure (0, x)
+        Free x -> do
+            f' <- P.runEffect $ x >-> Pr.drain
+            (l,x) <- cmd_length f'
+            pure $ (l + 1, x)
+
+
+-- | Apply a function (of one or more arguments) to a stream of @`Many`@
+-- @`Object`@s. Each argument is sourced from an object in the stream.
+cmd_mapping :: Lambda l => (LB.ByteString -> l) -> Many r -> Many r
 cmd_mapping f input = do
     -- Check if there is another object, if so, we apply, otherwise we stop.
     -- `apply` will pull of as many objects as there are arguments.
@@ -199,10 +209,11 @@ cmd_mapping f input = do
         Pure r -> pure r
         Free x -> do
             (arg, input') <- PG.lift $ P.toLazyM' x
-            input'' <- liftF $ Main.apply (f arg) False input'
+            input'' <- liftF $ Main.apply (f arg) input'
             cmd_mapping f input'
 
--- Note, cmd_mapping function MUST consume at least one object. Can consume more.
+-- | Similar to @`cmd_mapping`@, except that the @`Lam`@ type is used to
+-- represent a "function" that can be constructed at run time.
 cmd_mapping' :: Lam -> FreeT Object (SafeT IO) r -> FreeT Object (SafeT IO) r
 cmd_mapping' (c,f) input = do
     -- Check if there is another object, if so, we apply, otherwise we stop.
@@ -352,6 +363,10 @@ cmd_mapIO' ss@(SISO s) input = do
 mimo :: [(LB.ByteString, ArgParse MIMO)]
 mimo =
     [ ("map",   p $ \s -> MIMO $ cmd_mapIO' s )
+    , ("mapping", do
+        l <- pLambda
+        p $ MIMO $ cmd_mapping' l
+      )
     ]
 
 siso :: [(LB.ByteString, ArgParse SISO)]
