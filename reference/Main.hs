@@ -364,7 +364,7 @@ mimo :: [(LB.ByteString, ArgParse MIMO)]
 mimo =
     [ ("map",   p $ \s -> MIMO $ cmd_mapIO' s )
     , ("mapping", do
-        l <- pLambda
+        l <- pLambda -- TODO: Need to be able to fuse lambdas.
         p $ MIMO $ cmd_mapping' l
       )
     ]
