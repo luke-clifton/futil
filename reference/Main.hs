@@ -26,6 +26,7 @@ module Main where
 --
 -- unXxx   -- Do the opposite of xxx
 
+import Text.Printf
 import Data.Void
 import System.Exit
 import Safe
@@ -67,6 +68,7 @@ import Data.Char
 import Pipes.Safe
 import Options.Applicative
 import qualified Text.Megaparsec as M
+import qualified Text.Megaparsec.Byte as M
 
 
 -- | A @`Raw`@ is a raw stream of bytes. Any byte can appear in a raw stream.
@@ -333,7 +335,11 @@ data Command
     | CSM SIMO
     | CMS MISO
     | CMM MIMO
+    | CMR MIRO
+    | CSR SIRO
 
+newtype SIRO = SIRO (forall x. Object x -> Raw x)
+newtype MIRO = MIRO (forall x. Many x -> Raw x)
 newtype SISO = SISO (forall x. Producer ByteString (SafeT IO) x -> Producer ByteString (SafeT IO) x)
 newtype SIMO = SIMO (forall x. Producer ByteString (SafeT IO) x -> FreeT Object (SafeT IO) x)
 newtype MISO = MISO (forall x. FreeT Object (SafeT IO) x -> Producer ByteString (SafeT IO) x)
@@ -349,6 +355,9 @@ instance Parse x t => Parse (LB.ByteString -> x) t where
             [] -> fail "Expected an argument"
             (a:rest) -> put rest >> p (f a)
 
+instance Parse x t => Parse (String -> x) t where
+    p f = p $ \b -> f (C8.unpack b)
+
 instance Parse x t => Parse ([LB.ByteString] -> x) t where
     p f = do
         as <- get
@@ -362,9 +371,81 @@ instance Parse a t => Parse (SISO -> a) t where
         put []
         p (f s)
 
+instance Parse a t => Parse (MIRO -> a) t where
+    p f = do
+        save <- get
+        s <- pMiro
+        put []
+        p (f s)
+
 instance Parse MIMO MIMO where
     p f = pure f
 
+instance Parse MIRO MIRO where
+    p f = pure f
+
+data Format
+    = FConst LB.ByteString
+    | FSArg
+    deriving (Show)
+
+parseFormat :: LB.ByteString -> [Format]
+parseFormat f = case M.parse parser "" f of
+    Left _ -> error "format error"
+    Right r -> r
+
+    where
+        parser :: M.Parsec Void LB.ByteString [Format]
+        parser = M.many (pConst <|> pArg)
+        
+        pConst :: M.Parsec Void LB.ByteString Format
+        pConst = do
+            ws <- M.some (M.noneOf ([37,92] :: [Word8]) <|> pEsc)
+            pure (FConst (LB.pack ws))
+
+        pEsc = do
+            M.char 92
+            M.char 110
+            pure 10
+
+        pArg :: M.Parsec Void LB.ByteString Format
+        pArg = do
+            M.char 37
+            M.char 115
+            pure FSArg
+            
+
+-- | Format @`Many`@ @`Object`@s using a format string.
+-- For each format parameter, pull an object out of the
+-- stream and place it in the corresponding location.
+--
+-- * @\\n@ - newline
+-- * @%s@ - output one object
+--
+-- The format string is repeated as often as is required
+-- to consume all the objects.
+--
+-- If we run out of objects half way through, we simple
+-- stop early. No error is raised.
+--
+-- NB: This is likely to change a lot.
+cmd_format :: forall x. LB.ByteString -> Many x -> Raw x
+cmd_format fmt inp = go theFormat inp
+        where
+            theFormat = Main.parseFormat fmt
+            go :: [Format] -> Many x -> Raw x
+            go [] inp = go theFormat inp
+            go ((FConst bs):fs) inp = do
+                traverse P.yield (LB.toChunks bs)
+                go fs inp
+            go (FSArg:fs) inp = do
+                c <- lift $ runFreeT inp
+                case c of
+                    Pure x -> pure x
+                    Free x -> do
+                        r <- x
+                        go fs r
+    
 
 cmd_mapIO :: [LB.ByteString] -> Many x -> Many x
 cmd_mapIO cmda input = do
@@ -410,6 +491,7 @@ simo =
                     -- Left e -> pure $ CSM $ SIMO cmd_lines)
                     Left (CMS (MISO k)) -> pure $ CSS $ SISO (\x -> k (cmd_lines x))
                     Left (CMM (MIMO k)) -> pure $ CSM $ SIMO (\x -> k (cmd_lines x))
+                    Left (CMR (MIRO k)) -> pure $ CSR $ SIRO (\x -> k (cmd_lines x))
                     _ -> undefined
         )
     , ("words", do
@@ -422,6 +504,8 @@ simo =
                         Left (CMS (MISO k)) -> pure $ CSS $ SISO (\x -> k (P.words x))
                         Left _ -> error "nope"
                         Right x -> pure $ CSS $ SISO $ (\s -> cmdSysSiso x (output (P.words s)))
+      )
+    , ("format", CMR <$> (p $ \b -> MIRO (cmd_format b))
       )
     ]
 
@@ -447,6 +531,15 @@ pRawCmd = do
 
 runPRawCmd :: PareCtx x => [LB.ByteString] -> (Either String (Either Main.Command [LB.ByteString]), [String])
 runPRawCmd = evalState (runWriterT $ runExceptT pRawCmd)
+
+pMiro :: ArgParse MIRO
+pMiro = do
+    save <- get
+    ec <- pRawCmd
+    case ec of
+        Right c -> undefined
+        Left (CMR s) -> pure s
+        Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SISO"
 
 pSiso :: ArgParse SISO
 pSiso = do
@@ -475,6 +568,8 @@ runCmd (CSS (SISO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
 runCmd (CMM (MIMO x)) = void $ runSafeT $ emitObjects stdout $ x (P.stdin ^. objects)
 runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x P.stdin
 runCmd (CMS (MISO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
+runCmd (CMR (MIRO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
+runCmd (CSR (SIRO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
 
 type PareCtx x = (Int ~ Int)
 
