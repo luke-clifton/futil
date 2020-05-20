@@ -378,6 +378,13 @@ instance Parse a t => Parse (MIRO -> a) t where
         put []
         p (f s)
 
+instance Parse a t => Parse (SIMO -> a) t where
+    p f = do
+        save <- get
+        s <- pSimo
+        put []
+        p (f s)
+
 instance Parse MIMO MIMO where
     p f = pure f
 
@@ -445,7 +452,19 @@ cmd_format fmt inp = go theFormat inp
                     Free x -> do
                         r <- x
                         go fs r
-    
+
+
+cmd_bind :: SIMO -> MIMO
+cmd_bind (SIMO k) = MIMO go
+    where
+        go :: forall x. Many x -> Many x
+        go inp = do
+            c <- PG.lift $ runFreeT inp
+            case c of
+                Pure x -> pure x
+                Free x -> do
+                    r <- k x
+                    go r
 
 cmd_mapIO :: [LB.ByteString] -> Many x -> Many x
 cmd_mapIO cmda input = do
@@ -468,6 +487,7 @@ cmd_mapIO' ss@(SISO s) input = do
 mimo :: [(LB.ByteString, ArgParse MIMO)]
 mimo =
     [ ("map",   p $ \s -> MIMO $ cmd_mapIO' s )
+    , ("flat_map", p cmd_bind)
     , ("mapping", do
         l <- pLambda -- TODO: Need to be able to fuse lambdas.
         p $ MIMO $ cmd_mapping' l
@@ -540,6 +560,20 @@ pMiro = do
         Right c -> undefined
         Left (CMR s) -> pure s
         Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SISO"
+
+pSimo :: ArgParse SIMO
+pSimo = do
+    save <- get
+    ec <- pRawCmd
+    case ec of
+        Right c -> pure $ SIMO $ cmdSysSimo c
+        Left (CSM s) -> pure s
+        -- TODO: Any SISO can essentially act as a SIMO that is going to
+        -- produce either no, or one result. Or should this always be just one
+        -- result? I think 0 or 1 makes most sense when behaving  like raw
+        -- commands.
+        Left (CSS (SISO s)) -> pure (SIMO $ \x -> toObjects (s x))
+        Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SIMO"
 
 pSiso :: ArgParse SISO
 pSiso = do
