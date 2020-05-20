@@ -228,36 +228,61 @@ cmd_mapping' (c,f) input = do
                 case c of
                     Left b -> pure b
                     Right ix -> pure $ bs !! ix
-        liftF $ validate $ cmd ff Nothing
+            (cc, _) = runPRawCmd ff
+        case cc of
+            Right (Right rc) -> do
+                liftF $ void $ cmdSysSiso rc (mempty :: Raw ())
+            Right (Left (CSS (SISO f))) -> do
+                liftF $ f (mempty :: Object ())
+            Right (Left _) -> fail "Incorrect type"
+            _ -> undefined -- TODO: Do all other cases here, and better errors.
         cmd_mapping' (c,f) r
+                
+                
     -- cmd_mapping' (c,f)
 
-cmd :: [LB.ByteString] -> Maybe (Producer ByteString (SafeT IO) x) -> Producer ByteString (SafeT IO) (Maybe x)
-cmd args' minp = bracket
+-- | Run the command described by the list of bytestrings, feeding stdin
+-- and reading stdout.
+cmdRaw :: [LB.ByteString] -> Raw x -> Raw x
+cmdRaw args inp = cmd' args (\sin -> P.runEffect $ inp >-> P.toHandle sin)
+
+cmd'
+    :: [LB.ByteString]
+    -> (Handle -> SafeT IO x)
+    -> Raw x
+cmd' args' inp = bracket
     ( createProcess (proc (head args) (tail args))
-        { std_in = maybe NoStream (const CreatePipe) minp
+        { std_in = CreatePipe
         , std_err = Inherit
         , std_out = CreatePipe
         }
     )
     cleanupProcess
-    $ \(msin, Just sout, Nothing, _) -> do
-        a <- fromMaybe (pure Nothing) $ do
-            sin <- msin
-            inp <- minp
-            pure $ PG.lift $ liftBaseWith $ \run -> do
-                a <- async $ do
-                    r <- run $ P.runEffect $ inp >-> P.toHandle sin
+    $ \(Just sin, Just sout, Nothing, _) -> do
+        a <- do
+            PG.lift $ liftBaseWith $ \run -> do
+                async $ do
+                    r <- run $ inp sin
                     hClose sin
                     pure r
-                pure (Just a)
         P.fromHandle sout
-        PG.lift $ forM a $ \ac -> do
-            r <- liftIO $ wait ac
+        PG.lift $ do
+            r <- liftIO $ wait a
             restoreM r
     where
         args = map C8.unpack args'
 
+cmdSysSiso :: [LB.ByteString] -> Object x -> Object x
+cmdSysSiso args inp = validate (cmdRaw args inp)
+
+cmdSysSimo :: [LB.ByteString] -> Object x -> Many x
+cmdSysSimo args inp = toObjects (cmdRaw args inp)
+
+cmdSysMiso :: [LB.ByteString] -> Many x -> Object x
+cmdSysMiso args inp = validate $ cmd' args (\sin -> emitObjects sin inp)
+
+cmdSysMimo :: [LB.ByteString] -> Many x -> Many x
+cmdSysMimo args inp = toObjects (cmd' args (\sin -> emitObjects sin inp))
 
 type Lam = (Int, [ Either LB.ByteString Int ])
 
@@ -276,17 +301,6 @@ slurpNatObjs n s f = do
 cmd_lines :: Object x -> FreeT Object (SafeT IO) x
 cmd_lines o = (validate o) ^. P.lines
 
-cmd_lines' :: [LB.ByteString] -> Object () -> IO () -- Object ()
-cmd_lines' c o = runSafeT $ P.runEffect $ fmap (const ()) (cmd c (Just (output $ (validate o) ^. P.lines))) >-> P.stdout
-
-cmd_mapIO :: [LB.ByteString] -> FreeT Object (SafeT IO) x -> FreeT Object (SafeT IO) x
-cmd_mapIO cmda input = do
-    c <- PG.lift $ runFreeT input
-    case c of
-        Pure x -> pure x
-        Free x -> do
-            r <- liftF $ fmap fromJust $ cmd cmda (Just x)
-            cmd_mapIO cmda r
 
 
 arg :: LB.ByteString -> ArgParse (IO ()) -> ArgParse (IO ())
@@ -351,6 +365,16 @@ instance Parse a t => Parse (SISO -> a) t where
 instance Parse MIMO MIMO where
     p f = pure f
 
+
+cmd_mapIO :: [LB.ByteString] -> Many x -> Many x
+cmd_mapIO cmda input = do
+    c <- PG.lift $ runFreeT input
+    case c of
+        Pure x -> pure x
+        Free x -> do
+            r <- liftF $ cmdSysSiso cmda x
+            cmd_mapIO cmda r
+
 cmd_mapIO' :: SISO -> FreeT Object (SafeT IO) x -> FreeT Object (SafeT IO) x
 cmd_mapIO' ss@(SISO s) input = do
     c <- PG.lift $ runFreeT input
@@ -397,7 +421,7 @@ simo =
                     case c of
                         Left (CMS (MISO k)) -> pure $ CSS $ SISO (\x -> k (P.words x))
                         Left _ -> error "nope"
-                        Right x -> pure $ CSS $ SISO $ (\s -> fmap fromJust $ cmd x (Just (output (P.words s))))
+                        Right x -> pure $ CSS $ SISO $ (\s -> cmdSysSiso x (output (P.words s)))
       )
     ]
 
@@ -421,6 +445,9 @@ pRawCmd = do
         [] -> throwError $ "Expected a command"
         (a:_) -> (Left <$> pCmd) <|> (put [] >> pure (Right as))
 
+runPRawCmd :: PareCtx x => [LB.ByteString] -> (Either String (Either Main.Command [LB.ByteString]), [String])
+runPRawCmd = evalState (runWriterT $ runExceptT pRawCmd)
+
 pSiso :: ArgParse SISO
 pSiso = do
     save <- get
@@ -430,7 +457,7 @@ pSiso = do
             when (head c == "find" && "-print0" `elem` c) $
                 throwError $ "Using `find -print0` when we are expecting a command that does not produce '\\0' bytes."
             when (head c == "rm" && "--" `notElem` c) $ tell ["You should use `rm [options] -- [files]` to prevent bad things from happening"]
-            pure $ SISO $ \x -> validate $ fmap fromJust $ cmd c (Just x)
+            pure $ SISO $ \x -> cmdSysSiso c x
         Left (CSS s) -> pure s
         Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SISO"
 
