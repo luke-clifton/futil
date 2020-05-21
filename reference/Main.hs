@@ -22,7 +22,7 @@ module Main where
 -- M  MISO  MIMO MIRO
 -- R  RISO  RIMO RIRO
 --
--- S -> M / toObjects 
+-- S -> M / liftF (exactly 1) or toObjects (1 or 0)
 -- S -> R / id
 --
 -- M -> R / output
@@ -30,6 +30,12 @@ module Main where
 --
 -- R -> S / validate -- Will produce a runtime error if invalid
 -- R -> M / toObjects
+--
+-- TODO: How far can we get with rewrite rules to remove output . toObjects?
+--
+-- TODO: Should a SO always terminate with a '\0'? I think that makes the
+--       SO -> MO more consistent. `flat_map identity` would not remove
+--       elements, but `flat_map cat` would remove empty elements.
 
 import Text.Printf
 import Data.Void
@@ -154,10 +160,25 @@ output f = do
             output p
 
 -- | Runtime check to validate that a @`Raw`@ input is infact an @`Object`@.
+
+-- TODO: Which is better?
 validate :: Functor m => Raw' m x -> Object' m x
 validate p = P.for p $ \b -> do
     when (ByteString.elem 0 b) $ fail "Invalid object. Contains '\\0' byte."
     P.yield b
+
+-- This version converts to a @`Many`@, and then ensures there is only one.
+-- This allows for a @\\0@ terminated object to be accepted as a SI (as long
+-- as there are no extra bytes).
+-- validate :: Monad m => Raw' m x -> Object' m x
+-- validate p = do
+--     PG.lift (runFreeT (toObjects p)) >>= \case
+--         Pure x -> pure x
+--         Free x -> do
+--             p <- x
+--             PG.lift (runFreeT p) >>= \case
+--                 Pure x -> pure x
+--                 Free x -> fail "Expected a single object" -- TODO: provide context
 
 -- | This is a helper class for peeling off @`Object`@s from a stream of
 -- @`Many`@, primarily used for feeding as arguments to a function.
@@ -306,9 +327,7 @@ slurpNatObjs n s f = do
             slurpNatObjs (pred n) (s ++ [arg]) input'
 
 cmd_lines :: Object x -> FreeT Object (SafeT IO) x
-cmd_lines o = (validate o) ^. P.lines
-
-
+cmd_lines o = o ^. P.lines
 
 arg :: LB.ByteString -> ArgParse (IO ()) -> ArgParse (IO ())
 arg a io = do
@@ -394,6 +413,9 @@ instance Parse MIMO MIMO where
     p f = pure f
 
 instance Parse MIRO MIRO where
+    p f = pure f
+
+instance Parse SIMO SIMO where
     p f = pure f
 
 data Format
@@ -534,6 +556,7 @@ simo =
       )
     , ("format", CMR <$> (p $ \b -> MIRO (cmd_format b))
       )
+    , ("singleton", CSM <$> ( p $ SIMO (\x -> liftF x)))
     ]
 
 miso :: [(LB.ByteString, ArgParse MISO)]
@@ -607,7 +630,7 @@ pCmd = select
 runCmd :: Main.Command -> IO ()
 runCmd (CSS (SISO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
 runCmd (CMM (MIMO x)) = void $ runSafeT $ emitObjects stdout $ x (P.stdin ^. objects)
-runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x P.stdin
+runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x (validate P.stdin)
 runCmd (CMS (MISO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
 runCmd (CMR (MIRO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
 runCmd (CSR (SIRO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
