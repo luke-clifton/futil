@@ -28,7 +28,7 @@ module Main where
 -- M -> R / output
 -- M -> S / error "Incompatible" -- M will always produce a \0 byte.
 --
--- R -> S / validate
+-- R -> S / validate -- Will produce a runtime error if invalid
 -- R -> M / toObjects
 
 import Text.Printf
