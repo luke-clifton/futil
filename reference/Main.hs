@@ -22,7 +22,7 @@ module Main where
 -- M  MISO  MIMO MIRO
 -- R  RISO  RIMO RIRO
 --
--- S -> M / liftF (exactly 1) or toObjects (1 or 0)
+-- S -> M / liftF (exactly 1) or toObjects (1 or 0) -- will use toObjects generally, as that is compatible with R. Use `singleton` command to manually enforce.
 -- S -> R / id
 --
 -- M -> R / output
@@ -556,7 +556,7 @@ simo =
       )
     , ("format", CMR <$> (p $ \b -> MIRO (cmd_format b))
       )
-    , ("singleton", CSM <$> ( p $ SIMO (\x -> liftF x)))
+    , ("singleton", CSM <$> ( p $ SIMO (\x -> liftF x))) -- TODO: accept continuation.
     ]
 
 miso :: [(LB.ByteString, ArgParse MISO)]
