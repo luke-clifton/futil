@@ -16,15 +16,20 @@
 {-# LANGUAGE Rank2Types #-}
 module Main where
 
--- Naming convention.
+
+--      S     M    R
+-- S  SISO  SIMO SIRO
+-- M  MISO  MIMO MIRO
+-- R  RISO  RIMO RIRO
 --
--- withXXX -- the std input is expected to be encoded as an XXX, this will be
---            decoded and then passed to continuation.
--- 
--- xxx     -- If arguments are provided, perform xxx on the output of the
---            command, otherwise perform xxx on stdinput.
+-- S -> M / toObjects 
+-- S -> R / id
 --
--- unXxx   -- Do the opposite of xxx
+-- M -> R / output
+-- M -> S / error "Incompatible" -- M will always produce a \0 byte.
+--
+-- R -> S / validate
+-- R -> M / toObjects
 
 import Text.Printf
 import Data.Void
@@ -392,7 +397,7 @@ instance Parse MIRO MIRO where
     p f = pure f
 
 data Format
-    = FConst LB.ByteString
+    = FConst !LB.ByteString
     | FSArg
     deriving (Show)
 
@@ -439,7 +444,9 @@ parseFormat f = case M.parse parser "" f of
 cmd_format :: forall x. LB.ByteString -> Many x -> Raw x
 cmd_format fmt inp = go theFormat inp
         where
+            theFormat :: [Format]
             theFormat = Main.parseFormat fmt
+
             go :: [Format] -> Many x -> Raw x
             go [] inp = go theFormat inp
             go ((FConst bs):fs) inp = do
