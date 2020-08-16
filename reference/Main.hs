@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -16,11 +17,14 @@
 {-# LANGUAGE Rank2Types #-}
 module Main where
 
+import Discover
+import Futil
 
---      S     M    R
+--      S     M    R   N
 -- S  SISO  SIMO SIRO
 -- M  MISO  MIMO MIRO
 -- R  RISO  RIMO RIRO
+-- N
 --
 -- S -> M / liftF (exactly 1) or toObjects (1 or 0) -- will use toObjects generally, as that is compatible with R. Use `singleton` command to manually enforce.
 -- S -> R / id
@@ -33,9 +37,75 @@ module Main where
 --
 -- TODO: How far can we get with rewrite rules to remove output . toObjects?
 --
--- TODO: Should a SO always terminate with a '\0'? I think that makes the
---       SO -> MO more consistent. `flat_map identity` would not remove
---       elements, but `flat_map cat` would remove empty elements.
+-- Structure.
+--
+--  1: input | cmd | output
+--  2: input | cmd output
+--  3: cmd input | output
+--  4: input | cmd continuation | output
+--
+-- Option 2 is particularly useful for command fusion (though, perhaps only
+-- really in the map/bind/zip programs).
+--
+-- Option 3 is useful when used as arguments to map/bind/zip programs.
+--
+-- For example,
+--
+--   input | lines map words length
+--
+-- Makes use of (2) for breaking the input into lines, and mapping the
+-- `words length` command on each line, which itself makes use of the
+-- (2) option for breaking up the input lines into words and feeding that
+-- to the `length` command. Note that the `lines` could have been replaced
+-- by a shell pipe, but that words could not.
+--
+--   input | lines | map words length
+--
+--   input | lines | map (words | length)  # illegal
+--
+-- What are some useful examples of (3)
+--
+--   length lines cat ./filename.txt
+--
+-- instead of
+--
+--   cat ./filename.txt | lines length
+--
+-- We can just provide a "readFile" command that accepts the continuation.
+--
+--  (2) readFile ./filename.txt lines length
+--  (3) length lines readFile ./filename.txt
+--
+-- Can we always convert between (2) and (3).
+--
+-- Is (3) more intuitive (and thus, more forwards?)
+--
+--   lines | map length words
+--
+-- `map` and friends can't provide a continuation, and thus must always
+-- rely on pipes. You always provide map with the "command to run on each
+-- element" which makes it more similar to (2) than (3). Perhaps consistency
+-- here is more important? (the continuation is run multiple times).
+--
+--  cons a cons b nil  -- cons (el) ouput -- good use of (2) style.
+--                        (output el, exec into continuation)
+--  cons a cons b nil  -- cons (el) input -- good use of (3) style.
+--                        (output el, call transfer input to output)
+--
+-- Transformation functions could either come with two versions.
+--
+--  lines  : input | cmd output 
+--  lines' : cmd input | output
+--
+-- Or, transformation functions could specify it.
+--
+--  input | lines | output
+--  input | lines '>' output
+--  lines '<' input | output
+--
+-- pipeline length '|' words '|' stuff
+--
+--
 
 import Text.Printf
 import Data.Void
@@ -80,20 +150,6 @@ import Pipes.Safe
 import Options.Applicative
 import qualified Text.Megaparsec as M
 import qualified Text.Megaparsec.Byte as M
-
-
--- | A @`Raw`@ is a raw stream of bytes. Any byte can appear in a raw stream.
-type Raw  = Raw' (SafeT IO)
-type Raw' = Producer ByteString
-
--- | An @`Object`@ is a stream of bytes that does not include the @\0@ byte.
-type Object  = Object' (SafeT IO)
-type Object' = P.Producer ByteString
-
--- | A @`Many`@ is a stream of @`Objects`@s delimited by @\0@ bytes.
-type Many = Many' (SafeT IO)
-type Many' m = FreeT (Object' m) m
-
 
 type ArgParse = ExceptT String (WriterT [String] (State [LB.ByteString]))
 
@@ -216,6 +272,12 @@ mapObjects f t = do
             r <- PG.lift (P.runEffect $ x >-> Pr.drain)
             mapObjects f r
 
+futil_length :: FutilCmd (Many x -> Object x)
+futil_length = FutilCmd $ \inp -> do
+    (r, x) <- lift $ cmd_length inp
+    P.yield (SC8.pack . show $ r)
+    pure x
+
 cmd_length :: Many x -> SafeT IO (Int, x)
 cmd_length f = do
     runFreeT f >>= \case
@@ -240,10 +302,17 @@ cmd_mapping f input = do
             input'' <- liftF $ Main.apply (f arg) input'
             cmd_mapping f input'
 
+
+-- TODO: Add Futil instance for `Lam -> a`
+futil_mapping :: [ByteString] -> FutilCmd (Many r -> Many r)
+futil_mapping bs = FutilCmd $ \inp -> do
+    let Right lam = lamFromList (map LB.fromStrict bs)
+    cmd_mapping' lam inp
+
 -- | Similar to @`cmd_mapping`@, except that the @`Lam`@ type is used to
 -- represent a "function" that can be constructed at run time.
-cmd_mapping' :: Lam -> FreeT Object (SafeT IO) r -> FreeT Object (SafeT IO) r
-cmd_mapping' (c,f) input = do
+cmd_mapping' :: Lam -> Many r -> Many r
+cmd_mapping' (Lam (c,f)) input = do
     -- Check if there is another object, if so, we apply, otherwise we stop.
     -- `apply` will pull of as many objects as there are arguments.
     (r,bs) <- slurpNatObjs c [] input
@@ -251,23 +320,26 @@ cmd_mapping' (c,f) input = do
     then r
     else do
         let
-            ff = do
+            (a:ff) = do
                 c <- f
                 case c of
                     Left b -> pure b
                     Right ix -> pure $ bs !! ix
-            (cc, _) = runPRawCmd ff
-        case cc of
-            Right (Right rc) -> do
-                liftF $ void $ cmdSysSiso rc (mempty :: Raw ())
-            Right (Left (CSS (SISO f))) -> do
-                liftF $ f (mempty :: Object ())
-            Right (Left _) -> fail "Incorrect type"
-            _ -> undefined -- TODO: Do all other cases here, and better errors.
-        cmd_mapping' (c,f) r
-                
-                
-    -- cmd_mapping' (c,f)
+            FutilCmd cc = cmd (map LB.toStrict ff) (LB.toStrict a)
+        --case cc of
+        --    Right (Right rc) -> do
+        --        liftF $ void $ cmdSysSiso rc (mempty :: Raw ())
+        --    Right (Left (CSS (SISO f))) -> do
+        --        liftF $ f (mempty :: Object ())
+        --    Right (Left _) -> fail "Incorrect type"
+        --    _ -> undefined -- TODO: Do all other cases here, and better errors.
+
+        -- TODO: Re-introduce the type checks?
+        liftF $ cc mempty
+        cmd_mapping' (Lam (c,f)) r
+--                
+--                
+--    -- cmd_mapping' (c,f)
 
 -- | Run the command described by the list of bytestrings, feeding stdin
 -- and reading stdout.
@@ -312,7 +384,7 @@ cmdSysMiso args inp = validate $ cmd' args (\sin -> emitObjects sin inp)
 cmdSysMimo :: [LB.ByteString] -> Many x -> Many x
 cmdSysMimo args inp = toObjects (cmd' args (\sin -> emitObjects sin inp))
 
-type Lam = (Int, [ Either LB.ByteString Int ])
+newtype Lam = Lam (Int, [ Either LB.ByteString Int ])
 
 data Nat = Z | S Nat
 
@@ -361,6 +433,22 @@ data Command
     | CMM MIMO
     | CMR MIRO
     | CSR SIRO
+    | CRM RIMO
+    | CNM NIMO
+
+cmd_nil :: Many ()
+cmd_nil = pure ()
+
+cmd_cons :: LB.ByteString -> Many x -> Many x
+cmd_cons arg input = do
+    liftF $ P.fromLazy arg
+    input
+
+cmd_list :: [LB.ByteString] -> Many ()
+cmd_list = mapM_ (liftF . P.fromLazy)
+
+futil_list :: [ByteString] -> FutilCmd (Raw x -> Many ())
+futil_list args = FutilCmd $ \_ -> mapM_ (liftF . P.yield) args
 
 newtype SIRO = SIRO (forall x. Object x -> Raw x)
 newtype MIRO = MIRO (forall x. Many x -> Raw x)
@@ -368,81 +456,35 @@ newtype SISO = SISO (forall x. Producer ByteString (SafeT IO) x -> Producer Byte
 newtype SIMO = SIMO (forall x. Producer ByteString (SafeT IO) x -> FreeT Object (SafeT IO) x)
 newtype MISO = MISO (forall x. FreeT Object (SafeT IO) x -> Producer ByteString (SafeT IO) x)
 newtype MIMO = MIMO (forall x. FreeT Object (SafeT IO) x -> FreeT Object (SafeT IO) x)
-
-class Parse a t where
-    p :: a -> ArgParse t
-
-instance Parse x t => Parse (LB.ByteString -> x) t where
-    p f = do
-        as <- get
-        case as of
-            [] -> fail "Expected an argument"
-            (a:rest) -> put rest >> p (f a)
-
-instance Parse x t => Parse (String -> x) t where
-    p f = p $ \b -> f (C8.unpack b)
-
-instance Parse x t => Parse ([LB.ByteString] -> x) t where
-    p f = do
-        as <- get
-        put []
-        p (f as)
-
-instance Parse a t => Parse (SISO -> a) t where
-    p f = do
-        save <- get
-        s <- pSiso
-        put []
-        p (f s)
-
-instance Parse a t => Parse (MIRO -> a) t where
-    p f = do
-        save <- get
-        s <- pMiro
-        put []
-        p (f s)
-
-instance Parse a t => Parse (SIMO -> a) t where
-    p f = do
-        save <- get
-        s <- pSimo
-        put []
-        p (f s)
-
-instance Parse MIMO MIMO where
-    p f = pure f
-
-instance Parse MIRO MIRO where
-    p f = pure f
-
-instance Parse SIMO SIMO where
-    p f = pure f
+newtype RIMO = RIMO (forall x. Raw x -> Many x)
+-- TODO: Should NI close stdin?
+newtype NIMO = NIMO (Many ())
 
 data Format
-    = FConst !LB.ByteString
+    = FConst !ByteString
     | FSArg
     deriving (Show)
 
-parseFormat :: LB.ByteString -> [Format]
+parseFormat :: ByteString -> [Format]
 parseFormat f = case M.parse parser "" f of
     Left _ -> error "format error"
     Right r -> r
 
     where
-        parser :: M.Parsec Void LB.ByteString [Format]
+        parser :: M.Parsec Void ByteString [Format]
         parser = M.many (pConst <|> pArg)
         
-        pConst :: M.Parsec Void LB.ByteString Format
+        pConst :: M.Parsec Void ByteString Format
         pConst = do
             ws <- M.some (M.noneOf ([37,92] :: [Word8]) <|> pEsc)
-            pure (FConst (LB.pack ws))
+            pure (FConst (ByteString.pack ws))
 
         pEsc = do
             M.char 92
             M.char 110
             pure 10
 
-        pArg :: M.Parsec Void LB.ByteString Format
+        pArg :: M.Parsec Void ByteString Format
         pArg = do
             M.char 37
             M.char 115
@@ -463,24 +505,24 @@ parseFormat f = case M.parse parser "" f of
 -- stop early. No error is raised.
 --
 -- NB: This is likely to change a lot.
-cmd_format :: forall x. LB.ByteString -> Many x -> Raw x
-cmd_format fmt inp = go theFormat inp
-        where
-            theFormat :: [Format]
-            theFormat = Main.parseFormat fmt
+futil_format :: ByteString -> FutilCmd (Many x -> Raw x)
+futil_format fmt = FutilCmd $ go theFormat
+    where
+        theFormat :: [Format]
+        theFormat = Main.parseFormat fmt
 
-            go :: [Format] -> Many x -> Raw x
-            go [] inp = go theFormat inp
-            go ((FConst bs):fs) inp = do
-                traverse P.yield (LB.toChunks bs)
-                go fs inp
-            go (FSArg:fs) inp = do
-                c <- lift $ runFreeT inp
-                case c of
-                    Pure x -> pure x
-                    Free x -> do
-                        r <- x
-                        go fs r
+        go :: [Format] -> Many x -> Raw x
+        go [] inp = go theFormat inp
+        go ((FConst bs):fs) inp = do
+            P.yield bs
+            go fs inp
+        go (FSArg:fs) inp = do
+            c <- lift $ runFreeT inp
+            case c of
+                Pure x -> pure x
+                Free x -> do
+                    r <- x
+                    go fs r
 
 
 cmd_bind :: SIMO -> MIMO
@@ -513,119 +555,68 @@ cmd_mapIO' ss@(SISO s) input = do
             r <- liftF $ s x -- fmap fromJust $ cmd cmda (Just x)
             cmd_mapIO' ss r
 
-mimo :: [(LB.ByteString, ArgParse MIMO)]
-mimo =
-    [ ("map",   p $ \s -> MIMO $ cmd_mapIO' s )
-    , ("flat_map", p cmd_bind)
-    , ("mapping", do
-        l <- pLambda -- TODO: Need to be able to fuse lambdas.
-        p $ MIMO $ cmd_mapping' l
-      )
-    ]
 
-siso :: [(LB.ByteString, ArgParse SISO)]
-siso =
-    [ ("identity", pure $ SISO id)
-    ]
+futil_take :: Int -> FutilCmd (Many x -> Many ())
+futil_take i = FutilCmd (cmd_take i)
 
-simo :: [(LB.ByteString, ArgParse Main.Command)]
-simo =
-    [ ("lines", do
-        save <- get
-        case save of
-            [] -> pure $ CSM $ SIMO cmd_lines
-            _  -> do
-                c <- pRawCmd
-                case c of
-                    -- Left e -> pure $ CSM $ SIMO cmd_lines)
-                    Left (CMS (MISO k)) -> pure $ CSS $ SISO (\x -> k (cmd_lines x))
-                    Left (CMM (MIMO k)) -> pure $ CSM $ SIMO (\x -> k (cmd_lines x))
-                    Left (CMR (MIRO k)) -> pure $ CSR $ SIRO (\x -> k (cmd_lines x))
-                    _ -> undefined
-        )
-    , ("words", do
-            save <- get
-            case save of
-                [] -> pure $ CSM $ SIMO P.words
-                _ -> do
-                    c <- pRawCmd
-                    case c of
-                        Left (CMS (MISO k)) -> pure $ CSS $ SISO (\x -> k (P.words x))
-                        Left _ -> error "nope"
-                        Right x -> pure $ CSS $ SISO $ (\s -> cmdSysSiso x (output (P.words s)))
-      )
-    , ("format", CMR <$> (p $ \b -> MIRO (cmd_format b))
-      )
-    , ("singleton", CSM <$> ( p $ SIMO (\x -> liftF x))) -- TODO: accept continuation.
-    ]
+-- instance Futil ByteString where
+--     cmd args "take" = cmd args futil_take
+--     cmd args "rpn"  = cmd args futil_rpn
+--     cmd args "unlines" = cmd args futil_unlines
+--     cmd args "lines" = cmd args (FutilCmd cmd_lines)
+--     cmd args "list" = cmd args futil_list
+--     cmd args raw = FutilCmd $ cmdRaw (C8.fromStrict <$> (raw : args))
 
-miso :: [(LB.ByteString, ArgParse MISO)]
-miso =
-    [ ("length", pure $ MISO $ \f -> do
-        (i, x) <- lift $ cmd_length f
-        P.yield (SC8.pack (show i))
-        pure x
-        )
-    , ("unlines", pure $ MISO $ \x -> do
-        -- unlines always line buffers.
-        liftIO (hSetBuffering stdout LineBuffering)
-        x ^. P.unlines)
-    ]
+instance Futil a => Futil (Int -> a) where
+    cmd (a:args) f = case SC8.readInt a of
+        Just (i,"") -> cmd args (f i)
+        _           -> error $ "Not an integer: " ++ show a
+    cmd _ _ = error "Expected an argument"
 
-pRawCmd :: ArgParse (Either Main.Command [LB.ByteString])
-pRawCmd = do
-    as <- get
-    case as of
-        [] -> throwError $ "Expected a command"
-        (a:_) -> (Left <$> pCmd) <|> (put [] >> pure (Right as))
+instance Futil a => Futil ([ByteString] -> a) where
+    cmd args f = cmd [] (f args)
 
-runPRawCmd :: [LB.ByteString] -> (Either String (Either Main.Command [LB.ByteString]), [String])
-runPRawCmd = evalState (runWriterT $ runExceptT pRawCmd)
+instance Futil a => Futil (ByteString -> a) where
+    cmd (arg:args) f = cmd args (f arg)
 
-pMiro :: ArgParse MIRO
-pMiro = do
-    save <- get
-    ec <- pRawCmd
-    case ec of
-        Right c -> undefined
-        Left (CMR s) -> pure s
-        Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SISO"
+instance (FromRaw b, FromRaw a) => Futil (FutilCmd (a -> b)) where
+    cmd [] (FutilCmd f) = FutilCmd $ (\x -> toRaw $ f (fromRaw x))
+    cmd (ncmd:args) (FutilCmd f) =
+        let
+            FutilCmd input = cmd args ncmd
+        in
+            FutilCmd $ (\x -> input (toRaw $ f (fromRaw x)))
 
-pSimo :: ArgParse SIMO
-pSimo = do
-    save <- get
-    ec <- pRawCmd
-    case ec of
-        Right c -> pure $ SIMO $ cmdSysSimo c
-        Left (CSM s) -> pure s
-        -- TODO: Any SISO can essentially act as a SIMO that is going to
-        -- produce either no, or one result. Or should this always be just one
-        -- result? I think 0 or 1 makes most sense when behaving  like raw
-        -- commands.
-        Left (CSS (SISO s)) -> pure (SIMO $ \x -> toObjects (s x))
-        Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SIMO"
+class FromRaw a where
+    fromRaw :: Raw () -> a
+    toRaw :: a -> Raw ()
 
-pSiso :: ArgParse SISO
-pSiso = do
-    save <- get
-    ec <- pRawCmd
-    case ec of
-        Right c -> do
-            when (head c == "find" && "-print0" `elem` c) $
-                throwError $ "Using `find -print0` when we are expecting a command that does not produce '\\0' bytes."
-            when (head c == "rm" && "--" `notElem` c) $ tell ["You should use `rm [options] -- [files]` to prevent bad things from happening"]
-            pure $ SISO $ \x -> cmdSysSiso c x
-        Left (CSS s) -> pure s
-        Left _       -> throwError $ "The command `" ++ show save ++ "` is of the wrong type. Expected SISO"
+instance x ~ () => FromRaw (Object x) where
+    fromRaw = validate
+    toRaw = id
 
-pCmd :: ArgParse Main.Command
-pCmd = select
-    $  mk CSS siso
-    ++ mk CMM mimo
-    ++ simo
-    ++ mk CMS miso
-    where
-        mk x = map (fmap $ fmap x)
+instance x ~ () => FromRaw (Many x) where
+    fromRaw = toObjects
+    toRaw = output
+
+runFutile :: ByteString -> [ByteString] -> IO ()
+runFutile a args = runSafeT $ P.runEffect $ unFutil (cmd args a) P.stdin >-> P.stdout
+
+futil_unlines :: FutilCmd (Many x -> Raw x)
+futil_unlines = FutilCmd $ \x -> x ^. P.unlines
+
+futil_lines :: FutilCmd (Raw x -> Many x)
+futil_lines = FutilCmd $ \x -> x ^. P.lines
+
+commandToRaw :: Main.Command -> Raw x -> Raw x
+commandToRaw (CSS (SISO x)) = x
+commandToRaw (CMM (MIMO x)) = output . x . toObjects
+commandToRaw (CSM (SIMO x)) = output . x
+commandToRaw (CMS (MISO x)) = x . toObjects
+commandToRaw (CMR (MIRO x)) = x . toObjects
+commandToRaw (CSR (SIRO x)) = x
+commandToRaw (CRM (RIMO x)) = output . x
+-- commandToRaw (CNM (NIMO x)) = _
 
 runCmd :: Main.Command -> IO ()
 runCmd (CSS (SISO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
@@ -634,36 +625,58 @@ runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x (validate P.std
 runCmd (CMS (MISO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
 runCmd (CMR (MIRO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
 runCmd (CSR (SIRO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
-
-runPCmd :: [LB.ByteString] -> (Either String Main.Command, [String])
-runPCmd = evalState (runWriterT $ runExceptT pCmd)
-
-execCmd :: [LB.ByteString] -> IO ()
-execCmd a = case runPCmd a of
-    (Left e, _) -> do
-        hPutStrLn stderr $ "error: " ++ e
-        exitWith (ExitFailure 120)
-    (Right e, warns) -> do
-        traverse (\s -> hPutStrLn stderr $ "warning: " ++ s) warns
-        runCmd e
+runCmd (CRM (RIMO x)) = void $ runSafeT $ emitObjects stdout $ x P.stdin 
+runCmd (CNM (NIMO x)) = void $ runSafeT $ emitObjects stdout x
 
 
 lamFromList :: [LB.ByteString] -> Either String Lam
 lamFromList i =
     case Data.List.break (==":") i of
-        (cmd, []) -> pure (1, map Left cmd ++ [Right 0])
+        (cmd, []) -> pure $ Lam (1, map Left cmd ++ [Right 0])
         (arg, ":" : []) -> Left "Need at least one command to execute after the ':'"
         (arg, ":" : cmds)
             | arg /= nub arg -> Left "Duplicate argument names."
-            | otherwise      -> pure (length arg, do
+            | otherwise      -> pure $ Lam (length arg, do
                 c <- cmds
                 pure $ maybe (Left c) Right $ elemIndex c arg
                 )
 
+cmd_take :: Int -> Many x -> Many ()
+cmd_take 0 _ = pure ()
+cmd_take n i = do
+    x <- lift $ runFreeT i
+    case x of
+        Pure _ -> pure () -- perhaps we should error out. Use truncate as a version which doesn't?
+        Free f -> do
+            r <- liftF f
+            cmd_take (pred n) r
+
+futil_rpn :: FutilCmd (Many x -> Many x)
+futil_rpn = FutilCmd cmd_rpn
+
+cmd_rpn :: Many x -> Many x
+cmd_rpn = go []
+    where
+        pushStack (a:b:cs) "+" = (a + b) : cs
+        pushStack a b = case C8.readInt b of
+            Just (i, "") -> i : a
+            _            -> error $ "Failed to parse: " ++ show b ++ ", " ++ show a
+
+        go :: [Int] -> Many x -> Many x
+        go stack i = do
+            x <- lift $ runFreeT i
+            case x of
+                Pure x -> do
+                    mapM_ (liftF . P.fromLazy . C8.pack . show) stack
+                    pure x
+                Free f -> do
+                    (r, a) <- lift $ P.toLazyM' f
+                    go (pushStack stack r) a
 
 realMain :: IO ()
 realMain = do
-    fmap LB.fromStrict <$> System.Posix.Env.ByteString.getArgs >>= execCmd
+    (a:as) <- System.Posix.Env.ByteString.getArgs
+    runFutile a as
 
 main :: IO ()
 main = do
@@ -673,3 +686,5 @@ main = do
         "futil" -> realMain
         "<interactive>" -> realMain
         x       -> withArgs (x : a) realMain
+
+discoverFutil
