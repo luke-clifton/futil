@@ -401,30 +401,6 @@ slurpNatObjs n s f = do
 cmd_lines :: Object x -> FreeT Object (SafeT IO) x
 cmd_lines o = o ^. P.lines
 
-arg :: LB.ByteString -> ArgParse (IO ()) -> ArgParse (IO ())
-arg a io = do
-    a' <- shift
-    unless (a == a') $ fail $ "Expected " ++ show a ++ " but got " ++ show a'
-    io
-
-pLambda :: ArgParse Lam
-pLambda = do
-    as <- get
-    ExceptT $ pure $ lamFromList as
-
-shift :: ArgParse LB.ByteString
-shift = do
-    as <- get
-    case as of
-        a:rest -> put rest >> pure a
-        []     -> fail "Expecting more arguments."
-
-select :: [ (LB.ByteString, ArgParse a) ] -> ArgParse a
-select s = do
-    a <- shift
-    case List.lookup a s of
-        Nothing -> throwError $ "Expected one of " ++ show (map fst s)
-        Just x -> x
 
 data Command
     = CSS SISO
@@ -480,9 +456,15 @@ parseFormat f = case M.parse parser "" f of
             pure (FConst (ByteString.pack ws))
 
         pEsc = do
+            let
+                escMap :: [(Word8, Word8)]
+                escMap = map (\(a,b) -> (fromIntegral $ ord a, fromIntegral $ ord b))
+                    [ ('n', '\n')
+                    , ('t', '\t')
+                    ]
             M.char 92
-            M.char 110
-            pure 10
+            c <- M.oneOf (map fst escMap)
+            pure (fromJust $ lookup c escMap)
 
         pArg :: M.Parsec Void ByteString Format
         pArg = do
@@ -502,7 +484,7 @@ parseFormat f = case M.parse parser "" f of
 -- to consume all the objects.
 --
 -- If we run out of objects half way through, we simple
--- stop early. No error is raised.
+-- stop early. No error is raised. ? Is this what we want?
 --
 -- NB: This is likely to change a lot.
 futil_format :: ByteString -> FutilCmd (Many x -> Raw x)
@@ -599,6 +581,15 @@ instance x ~ () => FromRaw (Many x) where
     fromRaw = toObjects
     toRaw = output
 
+futil_nil :: FutilCmd (Raw () -> Raw ())
+futil_nil = FutilCmd $ \i -> mempty
+
+futil_cons :: ByteString -> FutilCmd (Many x -> Many x)
+futil_cons a = FutilCmd $ \inp -> do
+    liftF $ P.yield a
+    inp
+
+-- TODO: For Many x, flush after each object.
 runFutile :: ByteString -> [ByteString] -> IO ()
 runFutile a args = runSafeT $ P.runEffect $ unFutil (cmd args a) P.stdin >-> P.stdout
 
