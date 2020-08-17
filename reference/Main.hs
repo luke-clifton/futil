@@ -156,85 +156,6 @@ type ArgParse = ExceptT String (WriterT [String] (State [LB.ByteString]))
 test :: Monad m => Producer ByteString m ()
 test = P.fromLazy "abcdefghijkl\0b\0"
 
--- | A lens that decodes a raw stream of bytes in a stream of objects.
-objects :: Lens' (Raw x) (Many x)
-objects = objects'
-
-objects' :: Monad m => Lens' (Raw' m x) (Many' m x)
-objects' k p = fmap (output) (k (toObjects p))
-
--- | Parse a @`Raw`@ stream of bytes into a stream of @`Object`@s
-toObjects :: Monad m => Raw' m x -> Many' m x
-toObjects p0 = PG.FreeT (go0 p0)
-  where
-    predicate = (== 0)
-    go0 p = do
-        x <- P.next p
-        case x of
-            Left   r       -> return (PG.Pure r)
-            Right (bs, p') ->
-                if (ByteString.null bs)
-                then go0 p'
-                else go1 (P.yield bs >> p')
-    go1 p = return $ PG.Free $ do
-        p' <- p ^. P.break predicate
-        return $ PG.FreeT $ do
-            x <- P.nextByte p'
-            case x of
-                Left   r       -> return (PG.Pure r)
-                Right (0, p'') -> do
-                    x' <- P.nextByte p''
-                    case x' of
-                        Left r -> return (PG.Pure r)
-                        Right (b, p''') -> go1 (P.yield (ByteString.singleton b) >> p''')
-
--- Emits objects one by one, flushing after each one. This lends itself well
--- to real-time streaming, but may impact performance.
-emitObjects :: Handle -> Many x -> SafeT IO x
-emitObjects h input = do
-    c <- runFreeT input
-    case c of
-        Pure x -> pure x
-        Free x -> do
-            n <- P.runEffect $ (x <* P.yield (ByteString.singleton 0)) >-> P.toHandle h
-            liftIO $ hFlush h
-            emitObjects h n
-
--- | Slurp a whole @`Object`@ into memory.
-slurp :: Object () -> SafeT IO LB.ByteString
-slurp = P.toLazyM
-
--- | Turn a stream of @`Many`@ objects into raw output. You may want to
--- consider using @`emitObjects`@ instead, which flushes at appropriate points.
-output :: Monad m => Many' m x -> Raw' m x
-output f = do
-    PG.lift (runFreeT f) >>= \case
-        Pure x -> pure x
-        Free x -> do
-            p <- x
-            P.yield (ByteString.singleton 0)
-            output p
-
--- | Runtime check to validate that a @`Raw`@ input is infact an @`Object`@.
-
--- TODO: Which is better?
-validate :: Functor m => Raw' m x -> Object' m x
-validate p = P.for p $ \b -> do
-    when (ByteString.elem 0 b) $ fail "Invalid object. Contains '\\0' byte."
-    P.yield b
-
--- This version converts to a @`Many`@, and then ensures there is only one.
--- This allows for a @\\0@ terminated object to be accepted as a SI (as long
--- as there are no extra bytes).
--- validate :: Monad m => Raw' m x -> Object' m x
--- validate p = do
---     PG.lift (runFreeT (toObjects p)) >>= \case
---         Pure x -> pure x
---         Free x -> do
---             p <- x
---             PG.lift (runFreeT p) >>= \case
---                 Pure x -> pure x
---                 Free x -> fail "Expected a single object" -- TODO: provide context
 
 -- | This is a helper class for peeling off @`Object`@s from a stream of
 -- @`Many`@, primarily used for feeding as arguments to a function.
@@ -250,7 +171,7 @@ instance Lambda c => Lambda (LB.ByteString -> c) where
         case c of
             Pure x -> error "We expected more arguments"
             Free x -> do
-                (arg, input') <- PG.lift $ P.toLazyM' x
+                (arg, input') <- PG.lift $ P.toLazyM' (objectToRaw x)
                 let r = f arg
                 Main.apply r input'
 
@@ -269,13 +190,13 @@ mapObjects f t = do
         Free x -> do
             let a = f x
             x <- liftF a
-            r <- PG.lift (P.runEffect $ x >-> Pr.drain)
+            r <- PG.lift (P.runEffect $ objectToRaw x >-> Pr.drain)
             mapObjects f r
 
 futil_length :: FutilCmd (Many x -> Object x)
 futil_length = FutilCmd $ \inp -> do
     (r, x) <- lift $ cmd_length inp
-    P.yield (SC8.pack . show $ r)
+    byteStringToObject (SC8.pack . show $ r)
     pure x
 
 cmd_length :: Many x -> SafeT IO (Int, x)
@@ -283,7 +204,7 @@ cmd_length f = do
     runFreeT f >>= \case
         Pure x -> pure (0, x)
         Free x -> do
-            f' <- P.runEffect $ x >-> Pr.drain
+            f' <- P.runEffect $ (objectToRaw x) >-> Pr.drain
             (l,x) <- cmd_length f'
             pure $ (l + 1, x)
 
@@ -298,7 +219,7 @@ cmd_mapping f input = do
     case c of
         Pure r -> pure r
         Free x -> do
-            (arg, input') <- PG.lift $ P.toLazyM' x
+            (arg, input') <- PG.lift $ P.toLazyM' (objectToRaw x)
             input'' <- liftF $ Main.apply (f arg) input'
             cmd_mapping f input'
 
@@ -325,7 +246,7 @@ cmd_mapping' (Lam (c,f)) input = do
                 case c of
                     Left b -> pure b
                     Right ix -> pure $ bs !! ix
-            FutilCmd cc = cmd (map LB.toStrict ff) (LB.toStrict a)
+            cc = cmd (map LB.toStrict ff) (LB.toStrict a)
         --case cc of
         --    Right (Right rc) -> do
         --        liftF $ void $ cmdSysSiso rc (mempty :: Raw ())
@@ -335,7 +256,7 @@ cmd_mapping' (Lam (c,f)) input = do
         --    _ -> undefined -- TODO: Do all other cases here, and better errors.
 
         -- TODO: Re-introduce the type checks?
-        liftF $ cc mempty
+        liftF $ validate $ exeRaw cc mempty
         cmd_mapping' (Lam (c,f)) r
 --                
 --                
@@ -372,17 +293,17 @@ cmd' args' inp = bracket
     where
         args = map C8.unpack args'
 
-cmdSysSiso :: [LB.ByteString] -> Object x -> Object x
-cmdSysSiso args inp = validate (cmdRaw args inp)
-
-cmdSysSimo :: [LB.ByteString] -> Object x -> Many x
-cmdSysSimo args inp = toObjects (cmdRaw args inp)
-
-cmdSysMiso :: [LB.ByteString] -> Many x -> Object x
-cmdSysMiso args inp = validate $ cmd' args (\sin -> emitObjects sin inp)
-
-cmdSysMimo :: [LB.ByteString] -> Many x -> Many x
-cmdSysMimo args inp = toObjects (cmd' args (\sin -> emitObjects sin inp))
+-- cmdSysSiso :: [LB.ByteString] -> Object x -> Object x
+-- cmdSysSiso args inp = validate (cmdRaw args inp)
+-- 
+-- cmdSysSimo :: [LB.ByteString] -> Object x -> Many x
+-- cmdSysSimo args inp = toObjects (cmdRaw args inp)
+-- 
+-- cmdSysMiso :: [LB.ByteString] -> Many x -> Object x
+-- cmdSysMiso args inp = validate $ cmd' args (\sin -> emitObjects sin inp)
+-- 
+-- cmdSysMimo :: [LB.ByteString] -> Many x -> Many x
+-- cmdSysMimo args inp = toObjects (cmd' args (\sin -> emitObjects sin inp))
 
 newtype Lam = Lam (Int, [ Either LB.ByteString Int ])
 
@@ -395,12 +316,8 @@ slurpNatObjs n s f = do
     case c of
         Pure x -> if null s then pure (pure x,s) else error "Expected more objects"
         Free x -> do
-            (arg, input') <- PG.lift $ P.toLazyM' x
+            (arg, input') <- PG.lift $ P.toLazyM' (objectToRaw x)
             slurpNatObjs (pred n) (s ++ [arg]) input'
-
-cmd_lines :: Object x -> FreeT Object (SafeT IO) x
-cmd_lines o = o ^. P.lines
-
 
 data Command
     = CSS SISO
@@ -412,19 +329,8 @@ data Command
     | CRM RIMO
     | CNM NIMO
 
-cmd_nil :: Many ()
-cmd_nil = pure ()
-
-cmd_cons :: LB.ByteString -> Many x -> Many x
-cmd_cons arg input = do
-    liftF $ P.fromLazy arg
-    input
-
-cmd_list :: [LB.ByteString] -> Many ()
-cmd_list = mapM_ (liftF . P.fromLazy)
-
 futil_list :: [ByteString] -> FutilCmd (Raw x -> Many ())
-futil_list args = FutilCmd $ \_ -> mapM_ (liftF . P.yield) args
+futil_list args = FutilCmd $ \_ -> mapM_ (liftF . byteStringToObject) args
 
 newtype SIRO = SIRO (forall x. Object x -> Raw x)
 newtype MIRO = MIRO (forall x. Many x -> Raw x)
@@ -503,121 +409,90 @@ futil_format fmt = FutilCmd $ go theFormat
             case c of
                 Pure x -> pure x
                 Free x -> do
-                    r <- x
+                    r <- objectToRaw x
                     go fs r
 
 
-cmd_bind :: SIMO -> MIMO
-cmd_bind (SIMO k) = MIMO go
-    where
-        go :: forall x. Many x -> Many x
-        go inp = do
-            c <- PG.lift $ runFreeT inp
-            case c of
-                Pure x -> pure x
-                Free x -> do
-                    r <- k x
-                    go r
+--cmd_bind :: SIMO -> MIMO
+--cmd_bind (SIMO k) = MIMO go
+--    where
+--        go :: forall x. Many x -> Many x
+--        go inp = do
+--            c <- PG.lift $ runFreeT inp
+--            case c of
+--                Pure x -> pure x
+--                Free x -> do
+--                    r <- k x
+--                    go r
 
-cmd_mapIO :: [LB.ByteString] -> Many x -> Many x
-cmd_mapIO cmda input = do
-    c <- PG.lift $ runFreeT input
-    case c of
-        Pure x -> pure x
-        Free x -> do
-            r <- liftF $ cmdSysSiso cmda x
-            cmd_mapIO cmda r
+-- cmd_mapIO :: [LB.ByteString] -> Many x -> Many x
+-- cmd_mapIO cmda input = do
+--     c <- PG.lift $ runFreeT input
+--     case c of
+--         Pure x -> pure x
+--         Free x -> do
+--             r <- liftF $ cmdSysSiso cmda x
+--             cmd_mapIO cmda r
 
-cmd_mapIO' :: SISO -> FreeT Object (SafeT IO) x -> FreeT Object (SafeT IO) x
-cmd_mapIO' ss@(SISO s) input = do
-    c <- PG.lift $ runFreeT input
-    case c of
-        Pure x -> pure x
-        Free x -> do
-            r <- liftF $ s x -- fmap fromJust $ cmd cmda (Just x)
-            cmd_mapIO' ss r
+-- cmd_mapIO' :: SISO -> FreeT Object (SafeT IO) x -> FreeT Object (SafeT IO) x
+-- cmd_mapIO' ss@(SISO s) input = do
+--     c <- PG.lift $ runFreeT input
+--     case c of
+--         Pure x -> pure x
+--         Free x -> do
+--             r <- liftF $ s x -- fmap fromJust $ cmd cmda (Just x)
+--             cmd_mapIO' ss r
 
 
 futil_take :: Int -> FutilCmd (Many x -> Many ())
 futil_take i = FutilCmd (cmd_take i)
-
--- instance Futil ByteString where
---     cmd args "take" = cmd args futil_take
---     cmd args "rpn"  = cmd args futil_rpn
---     cmd args "unlines" = cmd args futil_unlines
---     cmd args "lines" = cmd args (FutilCmd cmd_lines)
---     cmd args "list" = cmd args futil_list
---     cmd args raw = FutilCmd $ cmdRaw (C8.fromStrict <$> (raw : args))
-
-instance Futil a => Futil (Int -> a) where
-    cmd (a:args) f = case SC8.readInt a of
-        Just (i,"") -> cmd args (f i)
-        _           -> error $ "Not an integer: " ++ show a
-    cmd _ _ = error "Expected an argument"
-
-instance Futil a => Futil ([ByteString] -> a) where
-    cmd args f = cmd [] (f args)
-
-instance Futil a => Futil (ByteString -> a) where
-    cmd (arg:args) f = cmd args (f arg)
-
-instance (FromRaw b, FromRaw a) => Futil (FutilCmd (a -> b)) where
-    cmd [] (FutilCmd f) = FutilCmd $ (\x -> toRaw $ f (fromRaw x))
-    cmd (ncmd:args) (FutilCmd f) =
-        let
-            FutilCmd input = cmd args ncmd
-        in
-            FutilCmd $ (\x -> input (toRaw $ f (fromRaw x)))
-
-class FromRaw a where
-    fromRaw :: Raw () -> a
-    toRaw :: a -> Raw ()
-
-instance x ~ () => FromRaw (Object x) where
-    fromRaw = validate
-    toRaw = id
-
-instance x ~ () => FromRaw (Many x) where
-    fromRaw = toObjects
-    toRaw = output
 
 futil_nil :: FutilCmd (Raw () -> Raw ())
 futil_nil = FutilCmd $ \i -> mempty
 
 futil_cons :: ByteString -> FutilCmd (Many x -> Many x)
 futil_cons a = FutilCmd $ \inp -> do
-    liftF $ P.yield a
+    liftF $ byteStringToObject a
     inp
+
+futil_snoc :: ByteString -> FutilCmd (Many x -> Many x)
+futil_snoc a = FutilCmd $ \inp -> do
+    x <- inp
+    liftF $ byteStringToObject a
+    pure x
+
+futil_trace :: FutilCmd (Raw x -> Raw x)
+futil_trace = FutilCmd $ \inp -> inp >-> Pr.mapM_ (liftIO . ByteString.hPut stderr)
 
 -- TODO: For Many x, flush after each object.
 runFutile :: ByteString -> [ByteString] -> IO ()
-runFutile a args = runSafeT $ P.runEffect $ unFutil (cmd args a) P.stdin >-> P.stdout
+runFutile a args = exeO (cmd args a) stdout P.stdin
 
 futil_unlines :: FutilCmd (Many x -> Raw x)
-futil_unlines = FutilCmd $ \x -> x ^. P.unlines
+futil_unlines = FutilCmd $ \x -> (PG.maps objectToRaw x) ^. P.unlines
 
 futil_lines :: FutilCmd (Raw x -> Many x)
-futil_lines = FutilCmd $ \x -> x ^. P.lines
+futil_lines = FutilCmd $ \x -> PG.maps validate $ x ^. P.lines
 
-commandToRaw :: Main.Command -> Raw x -> Raw x
-commandToRaw (CSS (SISO x)) = x
-commandToRaw (CMM (MIMO x)) = output . x . toObjects
-commandToRaw (CSM (SIMO x)) = output . x
-commandToRaw (CMS (MISO x)) = x . toObjects
-commandToRaw (CMR (MIRO x)) = x . toObjects
-commandToRaw (CSR (SIRO x)) = x
-commandToRaw (CRM (RIMO x)) = output . x
+-- commandToRaw :: Main.Command -> Raw x -> Raw x
+-- commandToRaw (CSS (SISO x)) = x
+-- commandToRaw (CMM (MIMO x)) = output . x . toObjects
+-- commandToRaw (CSM (SIMO x)) = output . x
+-- commandToRaw (CMS (MISO x)) = x . toObjects
+-- commandToRaw (CMR (MIRO x)) = x . toObjects
+-- commandToRaw (CSR (SIRO x)) = x
+-- commandToRaw (CRM (RIMO x)) = output . x
 -- commandToRaw (CNM (NIMO x)) = _
 
-runCmd :: Main.Command -> IO ()
-runCmd (CSS (SISO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
-runCmd (CMM (MIMO x)) = void $ runSafeT $ emitObjects stdout $ x (P.stdin ^. objects)
-runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x (validate P.stdin)
-runCmd (CMS (MISO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
-runCmd (CMR (MIRO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
-runCmd (CSR (SIRO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
-runCmd (CRM (RIMO x)) = void $ runSafeT $ emitObjects stdout $ x P.stdin 
-runCmd (CNM (NIMO x)) = void $ runSafeT $ emitObjects stdout x
+-- runCmd :: Main.Command -> IO ()
+-- runCmd (CSS (SISO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
+-- runCmd (CMM (MIMO x)) = void $ runSafeT $ emitObjects stdout $ x (P.stdin ^. objects)
+-- runCmd (CSM (SIMO x)) = void $ runSafeT $ emitObjects stdout $ x (validate P.stdin)
+-- runCmd (CMS (MISO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
+-- runCmd (CMR (MIRO x)) = void $ runSafeT $ P.runEffect $ x (P.stdin ^. objects) >-> P.stdout
+-- runCmd (CSR (SIRO x)) = void $ runSafeT $ P.runEffect $ x P.stdin >-> P.stdout
+-- runCmd (CRM (RIMO x)) = void $ runSafeT $ emitObjects stdout $ x P.stdin 
+-- runCmd (CNM (NIMO x)) = void $ runSafeT $ emitObjects stdout x
 
 
 lamFromList :: [LB.ByteString] -> Either String Lam
@@ -658,10 +533,10 @@ cmd_rpn = go []
             x <- lift $ runFreeT i
             case x of
                 Pure x -> do
-                    mapM_ (liftF . P.fromLazy . C8.pack . show) stack
+                    mapM_ (liftF . byteStringToObject . SC8.pack . show) stack
                     pure x
                 Free f -> do
-                    (r, a) <- lift $ P.toLazyM' f
+                    (r, a) <- lift $ P.toLazyM' (objectToRaw f)
                     go (pushStack stack r) a
 
 realMain :: IO ()
@@ -677,5 +552,124 @@ main = do
         "futil" -> realMain
         "<interactive>" -> realMain
         x       -> withArgs (x : a) realMain
+
+instance Futil a => Futil (Int -> a) where
+    cmd (a:args) f = case SC8.readInt a of
+        Just (i,"") -> cmd args (f i)
+        _           -> error $ "Not an integer: " ++ show a
+    cmd _ _ = error "Expected an argument"
+
+instance Futil a => Futil ([ByteString] -> a) where
+    cmd args f = cmd [] (f args)
+
+instance Futil a => Futil (ByteString -> a) where
+    cmd (arg:args) f = cmd args (f arg)
+
+-- TODO: Flush objects when fed to raw.
+instance (FromRaw b, FromRaw a) => Futil (FutilCmd (a -> b)) where
+    cmd [] (FutilCmd f) =
+        let
+            r = \x -> toRaw (f (fromRaw x))
+        in
+            FutilExe
+                { exeO = \h i -> emit h (r i)
+                , exeRaw = r
+                }
+    cmd (ncmd:args) (FutilCmd f) =
+        let
+            cont = cmd args ncmd
+            r = \x -> toRaw (f (fromRaw x))
+        in
+            FutilExe
+                { exeO = \h i -> exeO cont h (r i)
+                , exeRaw = \i -> exeRaw cont (r i)
+                }
+
+class FromRaw a where
+    fromRaw :: Raw () -> a
+    toRaw :: a -> Raw ()
+    emit :: Handle -> a -> IO ()
+
+instance x ~ () => FromRaw (Raw x) where
+    fromRaw = id
+    toRaw = id
+    emit h inp = runSafeT $ P.runEffect $ inp >-> P.toHandle h
+
+instance x ~ () => FromRaw (Object x) where
+    fromRaw = validate
+    toRaw = objectToRaw
+    emit h (Object inp) = runSafeT $ P.runEffect $ inp >-> P.toHandle h
+
+instance x ~ () => FromRaw (Many x) where
+    fromRaw = toObjects
+    toRaw = output
+    emit h inp = runSafeT $ emitObjects h inp
+
+-- | A lens that decodes a raw stream of bytes in a stream of objects.
+objects :: Lens' (Raw x) (Many x)
+objects = objects'
+
+objects' :: Monad m => Lens' (Raw' m x) (Many' m x)
+objects' k p = fmap (output) (k (toObjects p))
+
+-- TODO: The validate step is pointless here.
+-- | Parse a @`Raw`@ stream of bytes into a stream of @`Object`@s
+toObjects :: forall m x. Monad m => Raw' m x -> Many' m x
+toObjects p0 = PG.maps validate (PG.FreeT (go0 p0))
+  where
+    predicate = (== 0)
+    go0 p = do
+        x <- P.next p
+        case x of
+            Left   r       -> return (PG.Pure r)
+            Right (bs, p') ->
+                if (ByteString.null bs)
+                then go0 p'
+                else go1 (P.yield bs >> p')
+    go1 p = return $ PG.Free $ do
+        p' <- p ^. P.break predicate
+        return $ PG.FreeT $ do
+            x <- P.nextByte p'
+            case x of
+                Left   r       -> return (PG.Pure r)
+                Right (0, p'') -> do
+                    x' <- P.nextByte p''
+                    case x' of
+                        Left r -> return (PG.Pure r)
+                        Right (b, p''') -> go1 (P.yield (ByteString.singleton b) >> p''')
+
+-- Emits objects one by one, flushing after each one. This lends itself well
+-- to real-time streaming, but may impact performance.
+emitObjects :: Handle -> Many x -> SafeT IO x
+emitObjects h input = do
+    c <- runFreeT input
+    case c of
+        Pure x -> pure x
+        Free x -> do
+            n <- P.runEffect $ (objectToRaw x <* P.yield (ByteString.singleton 0)) >-> P.toHandle h
+            liftIO $ hFlush h
+            emitObjects h n
+
+-- | Slurp a whole @`Object`@ into memory.
+slurp :: Object () -> SafeT IO LB.ByteString
+slurp = P.toLazyM . objectToRaw
+
+futil_reverse :: FutilCmd (Many x -> Many x)
+futil_reverse = FutilCmd $ go []
+    where
+        go xs i = do
+            x <- lift $ runFreeT i
+            case x of
+                Pure x -> do
+                    mapM_ (liftF . byteStringToObject) xs
+                    pure x
+                Free f -> do
+                    (r, a) <- lift $ P.toLazyM' (objectToRaw f)
+                    go (LB.toStrict r :xs) a
+
+-- futil_tcp
+-- futil_tls
+-- futil_http
+-- futil_head ?? need another name
 
 discoverFutil

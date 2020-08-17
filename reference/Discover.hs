@@ -1,6 +1,8 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Discover where
 
+import Pipes
+import qualified Pipes.ByteString as P
 import Futil
 import Data.Foldable
 import Data.Char (isSpace)
@@ -30,25 +32,51 @@ discoverFutilMap = do
           
     pure cmds
 
-
 discoverFutilCase :: Q Exp
 discoverFutilCase = do
     m <- discoverFutilMap
     ms <- mapM makeMatch m
     rawcase <- rawCase
-    pure $ LamCaseE (ms ++ [rawcase])
+    futilcase <- futilCase
+    pure $ LamCaseE (ms ++ [futilcase, rawcase])
 
     where
         rawCase :: Q Match
         rawCase = do
             n <- newName "cmd"
-            a <- [| FutilCmd $ cmdRaw (C8.fromStrict <$> ( $(pure $ VarE n) : args ) )|]
+            a <- [| let 
+                        cmdline = C8.fromStrict <$> ( $(pure $ VarE n) : args)
+                        r = cmdRaw cmdline
+                        cr = cmd' cmdline
+                    in FutilExe
+                        { exeRaw = r
+                        -- TODO: Use exeRaw to feed exeO handle somehow. This
+                        -- achieves flushing objects to subprocesses.
+                        , exeO = \h i -> runSafeT $ runEffect $ r i >-> P.toHandle h
+                        }
+
+                 |]
             pure $ Match (VarP n) (NormalB a) []
+
+        futilCase :: Q Match
+        futilCase = do
+            a <- [|cmd (tail args) (head args)|]
+            pure $ Match (LitP (StringL "futil")) (NormalB a) []
 
         makeMatch :: (String, Name) -> Q Match
         makeMatch (s, n) = do
             a <- [|cmd args $(pure $ VarE n)|]
             pure $ Match (LitP (StringL s)) (NormalB a) []
+
+--    cmd (ncmd:args) (FutilCmd f) =
+--        let
+--            cont = cmd args ncmd
+--            r = \x -> toRaw (f (fromRaw x))
+--        in
+--            FutilExe
+--                { exeO = \h i -> exeO cont h (r i)
+--                , exeRaw = \i -> exeRaw cont (r i)
+--                }
 
 discoverFutil :: Q [Dec]
 discoverFutil = [d|
