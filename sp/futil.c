@@ -49,7 +49,15 @@ void register_handler(struct prog_t *prog, bool on)
 	struct sigaction sa = (struct sigaction) {
 		.sa_handler = on ? handler : SIG_DFL,
 	};
+	// TODO: Determine a better set of signals
 	sigaction(SIGTERM, &sa, NULL);
+	sigaction(SIGUSR1, &sa, NULL);
+	sigaction(SIGUSR2, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+	sigaction(SIGALRM, &sa, NULL);
+	sigaction(SIGHUP, &sa, NULL);
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGWINCH, &sa, NULL);
 }
 
 void futil_write(struct prog_t *prog, size_t n, char buf[n])
@@ -126,6 +134,16 @@ pid_t futil_spawn2(struct prog_t *prog, int fds[2], char *argv[])
 		futil_die_errno(prog);
 	}
 
+	sigset_t ss;
+	sigset_t restore;
+	if (-1 == sigfillset(&ss))
+	{
+		futil_die_errno(prog);
+	}
+	if (-1 == sigprocmask(SIG_SETMASK, &ss, &restore))
+	{
+		futil_die_errno(prog);
+	}
 	pid_t pid = fork();
 	
 	if (-1 == pid)
@@ -136,6 +154,10 @@ pid_t futil_spawn2(struct prog_t *prog, int fds[2], char *argv[])
 	if (0 == pid)
 	{
 		// In child
+		if (-1 == sigprocmask(SIG_SETMASK, &restore, NULL))
+		{
+			futil_die_errno(prog);
+		}
 		close(childin[1]);
 		close(childout[0]);
 		dup2(childin[0], 0);
@@ -148,6 +170,11 @@ pid_t futil_spawn2(struct prog_t *prog, int fds[2], char *argv[])
 	if (save == (prog->children + sizeof(prog->children)/sizeof(prog->children[0])))
 		futil_die(prog, "too many children");
 	*save = pid;
+
+	if (-1 == sigprocmask(SIG_SETMASK, &restore, NULL))
+	{
+		futil_die_errno(prog);
+	}
 
 	close(childin[0]);
 	close(childout[1]);
@@ -166,6 +193,17 @@ pid_t futil_spawn(struct prog_t *prog, int fds[1], char *argv[])
 		futil_die_errno(prog);
 	}
 
+	sigset_t ss;
+	sigset_t restore;
+	if (-1 == sigfillset(&ss))
+	{
+		futil_die_errno(prog);
+	}
+	if (-1 == sigprocmask(SIG_SETMASK, &ss, &restore))
+	{
+		futil_die_errno(prog);
+	}
+
 	pid_t pid = fork();
 	
 	if (-1 == pid)
@@ -176,6 +214,10 @@ pid_t futil_spawn(struct prog_t *prog, int fds[1], char *argv[])
 	if (0 == pid)
 	{
 		// In child
+		if (-1 == sigprocmask(SIG_SETMASK, &restore, NULL))
+		{
+			futil_die_errno(prog);
+		}
 		close(childout[0]);
 		dup2(childout[1], 1);
 		execvp(argv[0], argv);
@@ -186,6 +228,11 @@ pid_t futil_spawn(struct prog_t *prog, int fds[1], char *argv[])
 	if (save == (prog->children + sizeof(prog->children)/sizeof(prog->children[0])))
 		futil_die(prog, "too many children");
 	*save = pid;
+
+	if (-1 == sigprocmask(SIG_SETMASK, &restore, NULL))
+	{
+		futil_die_errno(prog);
+	}
 
 	close(childout[1]);
 	fds[0] = childout[0];
