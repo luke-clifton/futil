@@ -246,26 +246,34 @@ void futil_die_errno(struct prog_t *prog)
 
 void futil_die(struct prog_t *prog, const char *message)
 {
-	futil_shutdown(prog);
 	fprintf(stderr, "%s: %s\n", prog->name, message);
+	futil_shutdown(prog);
 	exit(111);
 }
 
 ssize_t futil_forward_object(struct prog_t *prog, size_t n, char buf[n], ssize_t cur, int fd)
 {
+	return futil_forward_object_sized(prog, n, buf, cur, fd, NULL);
+}
+
+ssize_t futil_forward_object_sized(struct prog_t *prog, size_t n, char buf[n], ssize_t cur, int fd, int *written)
+{
 	ssize_t r;
 	bool sent = false;
+	if (written) *written = 0;
 	do
 	{
 		char *nil = memchr(buf, 0, cur);
 		if (nil)
 		{
+			if (written) (*written) += nil - buf;
 			futil_write(prog, nil - buf, buf);
 			memmove(buf, nil + 1, n - (nil - buf) - 1);
 			return (cur - (nil - buf) - 1);
 		}
 		else
 		{
+			if (written) (*written) += cur;
 			futil_write(prog, cur, buf);
 			sent = cur != 0;
 		}

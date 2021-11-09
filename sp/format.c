@@ -23,7 +23,9 @@ int main(int argc, char *argv[])
 	ssize_t r;
 	char buf[BUFSIZ];
 	int cur = 0;
-
+	int lengthspec = -1;
+	char *end;
+	int sized;
 	for (;;)
 	{
 		char *ix = argv[1];
@@ -35,23 +37,41 @@ int main(int argc, char *argv[])
 					ix++;
 					switch (*ix)
 					{
-						case '0':
+						case 0:
 							futil_die(&prog, "expected another character after the '%'");
 							break;
 						case '%':
 							futil_write(&prog, 1, ix);
 							ix++;
 							break;
+						case '0':
+						case '1':
+						case '2':
+						case '3':
+						case '4':
+						case '5':
+						case '6':
+						case '7':
+						case '8':
+						case '9':
+							lengthspec = strtol(ix, &end, 10);
+							ix = end;
 						case 's':
 							if (cur < 0)
 							{
 								goto nomore;
 							}
-							cur = futil_forward_object(&prog, sizeof(buf), buf, cur, input);
+							cur = futil_forward_object_sized(&prog, sizeof(buf), buf, cur, input, &sized);
 							if (cur == -2)
 							{
 								goto nomore;
 							}
+							while (lengthspec > sized)
+							{
+								futil_write(&prog, 1, " ");
+								sized++;
+							}
+							lengthspec = 0;
 							ix++;
 							break;
 						default:
