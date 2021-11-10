@@ -15,24 +15,41 @@ int main(int argc, char *argv[])
 
 	if (argc > 1)
 	{
-		start = atol(argv[1]);
+		if (argv[1][0] != '_')
+			start = atol(argv[1]);
 	}
 
 	if (argc > 2)
 	{
-		stop = atol(argv[2]);
+		if (argv[2][0] != '_')
+			stop = atol(argv[2]);
 	}
 
 	if (argc == 4)
 	{
-		step = atol(argv[3]);
+		if (argv[3][0] != '_')
+			step = atol(argv[3]);
 	}
 
-	for (long i = start; i < stop; i += step)
+	for (long i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
 	{
 		char buf[BUFSIZ];
 		int len = snprintf(buf, sizeof(buf), "%ld", i);
 		futil_write(&prog, len + 1, buf);
+		if (step > 0)
+		{
+			if (i > (LONG_MAX - step))
+			{
+				break;
+			}
+		}
+		else
+		{
+			if (i < (LONG_MIN - step))
+			{
+				break;
+			}
+		}
 	}
 
 	futil_shutdown(&prog);
