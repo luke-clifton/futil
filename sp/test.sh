@@ -21,3 +21,6 @@ expect '-\0-\0' pipeline fix cons - '' head -c 4
 expect '1\n1\n2\n3\n5\n8\n13\n' unlines take 7 fix cons 1 cons 1 calc read peek + p reset
 expect '\0' lift true
 expect '\n'  lift echo
+expect 7 length enum 0 7
+expect '0\x001\x002\x00' enum 0 3
+expect '0\x002\x00' enum 0 3 2
