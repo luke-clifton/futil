@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
 	
 	ssize_t r;
 	char buf[BUFSIZ];
+	bool terminated = true;
 	while ((r = futil_read(&prog, sizeof(buf), buf, input)))
 	{
 		char *x;
@@ -23,7 +24,12 @@ int main(int argc, char *argv[])
 		{
 			*x = '\n';
 		}
+		terminated = buf[r-1] == '\n';
 		futil_write(&prog, r, buf);
+	}
+	if (!terminated)
+	{
+		futil_write(&prog, 1, "\n");
 	}
 	if (input) close(input);
 	futil_shutdown(&prog);
