@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "futil.h"
 #include <errno.h>
+#include <sys/wait.h>
 
 // A futil program should
 //  a) flush it's buffers if reading from input would ever block (for N seconds);

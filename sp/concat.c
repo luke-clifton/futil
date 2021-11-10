@@ -23,19 +23,6 @@ int main(int argc, char *argv[])
 	}
 	if (input) close(input);
 	futil_shutdown(&prog);
-	if (pid)
-	{
-		int status;
-		waitpid(pid, &status, 0);
-		if (WIFEXITED(status))
-		{
-			return WEXITSTATUS(status);
-		}
-		if (WIFSIGNALED(status))
-		{
-			kill(getpid(), WTERMSIG(status));
-		}
-	}
 }
 
 

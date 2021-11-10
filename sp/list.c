@@ -1,9 +1,4 @@
 #include "futil.h"
-#include <stdlib.h>
-#include <sys/wait.h>
-#include <string.h>
-
-// String -> [String] -> [String]
 
 int main(int argc, char *argv[])
 {

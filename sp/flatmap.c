@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 			futil_write(&prog, 1, "\0");
 		}
 		close(fds[0]);
-		waitpid(pid, NULL, 0);
+		futil_wait(&prog, pid);
 	}
 	futil_shutdown(&prog);
 }

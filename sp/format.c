@@ -111,10 +111,6 @@ int main(int argc, char *argv[])
 nomore:
 	if (input) close(input);
 	futil_shutdown(&prog);
-	if (pid)
-	{
-		waitpid(pid, NULL, 0);
-	}
 }
 
 

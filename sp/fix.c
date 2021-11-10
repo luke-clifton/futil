@@ -1,6 +1,4 @@
 #include "futil.h"
-#include <stdlib.h>
-#include <sys/wait.h>
 
 // String -> [String] -> [String]
 
