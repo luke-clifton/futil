@@ -16,6 +16,7 @@ struct prog_t {
 	int flush_count;
 	int read_count;
 	pid_t children[5];
+	long arg_max;
 };
 
 
@@ -31,5 +32,6 @@ ssize_t futil_read(struct prog_t *prog, size_t n, char buf[n], int fd);
 void futil_shutdown(struct prog_t *prog);
 ssize_t futil_forward_object(struct prog_t *prog, size_t n, char buf[n], ssize_t cur, int fd);
 ssize_t futil_forward_object_sized(struct prog_t *prog, size_t n, char buf[n], ssize_t cur, int fd, int *written);
+int futil_slurp_object(struct prog_t *prog, size_t n, char buf[n], int cur, int fd, char **out);
 
 #endif /* FUTIL_H */

@@ -18,10 +18,9 @@ int main(int argc, char *argv[])
 	int cur = 0;
 
 	int input = 0;
-	int pid = 0;
 	if (argc > 2)
 	{
-		pid = futil_spawn(&prog, &input, &argv[2]);
+		futil_spawn(&prog, &input, &argv[2]);
 	}
 
 	while ((cur >= 0) && (count > 0))

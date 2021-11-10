@@ -1,7 +1,5 @@
 #include "futil.h"
 
-// String -> [String] -> [String]
-
 int main(int argc, char *argv[])
 {
 	struct prog_t prog = (struct prog_t){
@@ -9,7 +7,7 @@ int main(int argc, char *argv[])
 		.output = stdout
 	};
 	int fds[2];
-	pid_t pid = futil_spawn2(&prog, fds, &argv[1]);
+	futil_spawn2(&prog, fds, &argv[1]);
 	ssize_t r;
 	char buf[BUFSIZ];
 	while ((r = futil_read(&prog, sizeof(buf), buf, fds[0])))

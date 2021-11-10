@@ -8,11 +8,10 @@ int main(int argc, char *argv[])
 	};
 
 	int input = 0;
-	pid_t pid = 0;
 
 	if (argc > 1)
 	{
-		pid = futil_spawn(&prog, &input, &argv[1]);
+		futil_spawn(&prog, &input, &argv[1]);
 	}
 	
 	ssize_t r;

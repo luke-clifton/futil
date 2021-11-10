@@ -11,7 +11,6 @@ int main(int argc, char *argv[])
 	{
 		futil_die(&prog, "requires at least one argument");
 	}
-	size_t len = strlen(argv[1]) + 1;
 	futil_write(&prog, strlen(argv[1]) + 1, argv[1]);
 	if (argv[2])
 	{

@@ -8,6 +8,7 @@
 #include "futil.h"
 #include <errno.h>
 #include <sys/wait.h>
+#include <ctype.h>
 
 // A futil program should
 //  a) flush it's buffers if reading from input would ever block (for N seconds);
@@ -17,15 +18,6 @@
 //
 //  d) die the same way it's child did.
 //  e) die immediately if a child dies with a non-0 exit code or was killed by a signal
-
-typedef struct pid_fd {
-	int fd;
-	pid_t pid;
-} pid_fd;
-
-pid_fd get_pidfd(void) {
-
-}
 
 struct prog_t *main_prog = NULL;
 
@@ -259,7 +251,6 @@ ssize_t futil_forward_object(struct prog_t *prog, size_t n, char buf[n], ssize_t
 
 ssize_t futil_forward_object_sized(struct prog_t *prog, size_t n, char buf[n], ssize_t cur, int fd, int *written)
 {
-	ssize_t r;
 	bool sent = false;
 	if (written) *written = 0;
 	do
@@ -327,5 +318,62 @@ void futil_shutdown(struct prog_t *prog)
 	if (getenv("FUTIL_DEBUG")) {
 		fprintf(stderr, "%s: DEBUG: flush count %d\n", prog->name, prog->flush_count);
 		fprintf(stderr, "%s: DEBUG: read count %d\n", prog->name, prog->read_count);
+	}
+}
+
+void debug_buf(size_t n, char buf[n])
+{
+	for (int i = 0; i < n; i++)
+	{
+		if (isprint(buf[i]))
+			fprintf(stderr, "%c", buf[i]);
+		else
+			fprintf(stderr, ".");
+	}
+	fprintf(stderr, "---\n");
+}
+
+int futil_slurp_object(struct prog_t *prog, size_t n, char buf[n], int cur, int fd, char **out)
+{
+	if (! prog->arg_max)
+	{
+		prog->arg_max = sysconf(_SC_ARG_MAX);
+	}
+
+	*out = calloc(prog->arg_max, 1);
+	if (! *out)
+		futil_die(prog, "out of memory");
+
+	char *curfil = *out;
+	char *end    = &(*out)[prog->arg_max];
+	for(;;)
+	{
+		if (cur == 0)
+		{
+			cur = futil_read(prog, n, buf, fd);
+			if (cur == 0)
+			{
+				return (-1);
+			}
+		}
+
+		char *nil = memchr(buf, 0, cur);
+		int copysize = cur;
+		if (nil)
+		{
+			copysize = nil - buf + 1;
+		}
+		if ((curfil + copysize) >= end)
+		{
+			futil_die(prog, "object too large to slurp");
+		}
+		memcpy(curfil, buf, copysize);
+		if (nil)
+		{
+			memmove(buf, buf + copysize, cur - copysize);
+			return (cur - copysize);
+		}
+		cur = 0;
+		curfil += copysize;
 	}
 }

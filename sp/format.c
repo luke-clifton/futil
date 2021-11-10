@@ -8,7 +8,6 @@ int main(int argc, char *argv[])
 	};
 
 	int input = 0;
-	pid_t pid = 0;
 
 	if (argc < 1)
 	{
@@ -17,10 +16,9 @@ int main(int argc, char *argv[])
 
 	if (argc > 2)
 	{
-		pid = futil_spawn(&prog, &input, &argv[2]);
+		futil_spawn(&prog, &input, &argv[2]);
 	}
 	
-	ssize_t r;
 	char buf[BUFSIZ];
 	int cur = 0;
 	int lengthspec = -1;

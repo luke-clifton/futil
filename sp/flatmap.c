@@ -7,7 +7,7 @@ int main(int argc, char *argv[])
 		.output = stdout
 	};
 	int fds[2];
-	ssize_t cur;
+	ssize_t cur = 0;
 	char buf[BUFSIZ];
 	char buf2[BUFSIZ];
 	while ((cur > 0) || ((cur == 0) && (cur = futil_read(&prog, sizeof(buf), buf, 0))))
@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 			FD_SET(fds[0], &fdsr);
 			FD_ZERO(&fdsw);
 			FD_SET(fds[1], &fdsw);
-			int ready = select((fds[0] > fds[1] ? fds[0] : fds[1]) + 1, &fdsr, &fdsw, NULL, NULL);
+			select((fds[0] > fds[1] ? fds[0] : fds[1]) + 1, &fdsr, &fdsw, NULL, NULL);
 			if (FD_ISSET(fds[0], &fdsr))
 			{
 				ssize_t r = futil_read(&prog, sizeof(buf2), buf2, fds[0]);
