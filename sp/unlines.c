@@ -3,7 +3,7 @@
 int main(int argc, char *argv[])
 {
 	struct prog_t prog = (struct prog_t){
-		.name = "lines",
+		.name = "unlines",
 		.output = stdout
 	};
 
@@ -19,9 +19,9 @@ int main(int argc, char *argv[])
 	while ((r = futil_read(&prog, sizeof(buf), buf, input)))
 	{
 		char *x;
-		while ((x = memchr(buf, '\n', r)))
+		while ((x = memchr(buf, 0, r)))
 		{
-			*x = 0;
+			*x = '\n';
 		}
 		futil_write(&prog, r, buf);
 	}

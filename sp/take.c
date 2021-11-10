@@ -1,7 +1,5 @@
 #include "futil.h"
 
-// String -> [String] -> [String]
-
 int main(int argc, char *argv[])
 {
 	struct prog_t prog = (struct prog_t){

@@ -51,6 +51,7 @@ void register_handler(struct prog_t *prog, bool on)
 	sigaction(SIGHUP, &sa, NULL);
 	sigaction(SIGINT, &sa, NULL);
 	sigaction(SIGWINCH, &sa, NULL);
+	sigaction(SIGPIPE, &sa, NULL);
 }
 
 void futil_write(struct prog_t *prog, size_t n, char buf[n])
@@ -234,6 +235,11 @@ pid_t futil_spawn(struct prog_t *prog, int fds[1], char *argv[])
 
 void futil_die_errno(struct prog_t *prog)
 {
+	if (errno == EPIPE)
+	{
+		futil_shutdown(prog);
+		exit(0);
+	}
 	futil_die(prog, strerror(errno));
 }
 
@@ -299,6 +305,11 @@ void futil_wait(struct prog_t *prog, pid_t pid)
 	if (WIFSIGNALED(status))
 	{
 		futil_shutdown(prog);
+		// TODO: hmmm.. how best to handle SIGPIPE?
+		if (WTERMSIG(status) == SIGPIPE)
+		{
+			exit(0);
+		}
 		register_handler(prog, false);
 		kill(getpid(), WTERMSIG(status));
 		sleep(60);
