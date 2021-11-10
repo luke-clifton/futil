@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 			step = atol(argv[3]);
 	}
 
-	for (long i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
+	for (long i = start; ((step > 0) && (i < stop)) || ((step < 0) && (i > stop)) || (step == 0); i += step)
 	{
 		char buf[BUFSIZ];
 		int len = snprintf(buf, sizeof(buf), "%ld", i);
