@@ -76,6 +76,7 @@ int main(int argc, char *argv[])
 		futil_wait(&prog, pid);
 		for (int i = 0; i < nargs; i++)
 		{
+			// TODO: we could re-use these buffers...
 			free(args[i]);
 		}
 	}
