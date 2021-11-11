@@ -329,6 +329,7 @@ void futil_shutdown(struct prog_t *prog)
 	if (getenv("FUTIL_DEBUG")) {
 		fprintf(stderr, "%s: DEBUG: flush count %d\n", prog->name, prog->flush_count);
 		fprintf(stderr, "%s: DEBUG: read count %d\n", prog->name, prog->read_count);
+		fprintf(stderr, "%s: DEBUG: BUFSIZ was %d\n", prog->name, BUFSIZ);
 	}
 }
 
