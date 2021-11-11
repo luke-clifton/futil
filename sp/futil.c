@@ -356,6 +356,8 @@ int futil_slurp_object(struct prog_t *prog, size_t n, char buf[n], int cur, int 
 	if (! *out)
 		futil_die(prog, "out of memory");
 
+	if (cur < 0)
+		return cur;
 	char *curfil = *out;
 	char *end    = &(*out)[prog->arg_max];
 	for(;;)

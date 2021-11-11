@@ -65,4 +65,3 @@ int main(int argc, char *argv[])
 	}
 	futil_shutdown(&prog);
 }
-
