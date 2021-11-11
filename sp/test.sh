@@ -28,3 +28,4 @@ expect '-9223372036854775807\0' enum -9223372036854775807 -9223372036854775808 -
 expect '9223372036854775806\0' enum 9223372036854775806
 expect '' enum 0 0
 expect '0\x000\x000\x00' take 3 enum 0 0 0
+expect 'ab\x00cd\x00' pipeline bash -c 'printf '"'"'ab\0'"'"'; sleep 1; printf '"'"'cd\0'"'"'' '' flatmap cat
