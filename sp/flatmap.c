@@ -1,7 +1,7 @@
 #include "futil.h"
 
 // TODO: I think this has a bug in it.
-// list *.c | flatmaps a : pipeline lines cat a '' flatmap unlines cat
+// lines cat futil.c | flatmap unlines cat
 // occasionally gets stuck, and I think it's the flatmap that is to blame.
 
 int main(int argc, char *argv[])
@@ -46,6 +46,7 @@ int main(int argc, char *argv[])
 					cur = cur - nlen - 1;
 					break;
 				}
+				cur = 0;
 			}
 		}
 		ssize_t r;
