@@ -172,10 +172,10 @@ int main(int argc, char *argv[])
 	for (int i = 0; i < argc - 1; i++)
 	{
 		parse_cell(&prog, &cells[i], argv[i+1]);
-		if (cells[i].width > 0)
+		if (cells[i].width >= 0)
 		{
-			if (cells[i].width == 1)
-				cells[i].width++;
+			if (cells[i].width < 2)
+				cells[i].width = 2;
 			width -= cells[i].width;
 		}
 		else
