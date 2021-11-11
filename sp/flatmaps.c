@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 		close(fds[1]);
 		char buf2[BUFSIZ];
 		int r;
-		bool terminated = true;
+		bool terminated = false;
 		while ((r = futil_read(&prog, sizeof(buf2), buf2, fds[0])))
 		{
 			futil_write(&prog, r, buf2);

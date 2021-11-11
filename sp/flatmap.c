@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
 	char buf2[BUFSIZ];
 	while ((cur > 0) || ((cur == 0) && (cur = futil_read(&prog, sizeof(buf), buf, 0))))
 	{
-		bool terminated = true;
+		bool terminated = false;
 		pid_t pid = futil_spawn2(&prog, fds, &argv[1]);
 		while ((cur > 0) || ((cur == 0) && (cur = futil_read(&prog, sizeof(buf), buf, 0))))
 		{
@@ -35,15 +35,15 @@ int main(int argc, char *argv[])
 			if (FD_ISSET(fds[1], &fdsw))
 			{
 				char *nil = memchr(buf, 0, cur);
-				int nlen = nil ? nil - buf : cur;
+				int nlen = nil ? nil - buf + 1: cur;
 				if (-1 == write(fds[1], buf, nlen))
 				{
 					futil_die_errno(&prog);
 				}
 				if (nil)
 				{
-					memmove(buf, nil + 1, sizeof(buf) - (nil - buf) - 1);
-					cur = cur - nlen - 1;
+					memmove(buf, nil + 1, sizeof(buf) - nlen);
+					cur = cur - nlen;
 					break;
 				}
 				cur = 0;
